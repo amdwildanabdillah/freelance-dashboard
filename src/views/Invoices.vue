@@ -1,33 +1,33 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import Swal from 'sweetalert2'
+import { auth, db } from '../firebase'
+import { onAuthStateChanged } from 'firebase/auth'
+import { collection, getDocs } from 'firebase/firestore'
 
 const isLoading = ref(true)
 const projects = ref([])
-
-// WAJIB GANTI PAKE URL DEPLOY TERBARUMU!
-const API_URL = "https://script.google.com/macros/s/AKfycbxKFE-i7dPdpIV0G_vctDH-e9YwhinomFxIQIuaMxSGPAFLORZx6TVKMPsralxKZuo/exec"
+const isDarkMode = ref(localStorage.getItem('theme') === 'dark')
 
 const ownerName = 'Wildan'
 const managementFeePercent = 0.20 // 20% Potongan buat vendor
 
-const fetchProjects = async () => {
+const fetchProjects = async (uid) => {
+  if (!uid) return
   isLoading.value = true
   try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'GET_PROJECTS' })
-    })
-    const result = await response.json()
-    if (result.status === 'success') {
-      const validStatuses = ['dp', 'booked', 'editing', 'delivered']
+    const q = collection(db, 'vendors', uid, 'projects')
+    const querySnapshot = await getDocs(q)
+    const rawData = []
+    querySnapshot.forEach(doc => rawData.push({ id: doc.id, ...doc.data() }))
+
+    const validStatuses = ['dp', 'booked', 'editing', 'delivered', 'Menunggu DP']
       
-      projects.value = result.data
-        .filter(p => validStatuses.includes(p.Status?.toLowerCase()))
+    projects.value = rawData
+        .filter(p => validStatuses.includes(p.status))
         .map(p => {
-          const rawPrice = extractPrice(p.Package)
-          const fg = p.Photographer_ID || 'Belum di-assign'
+          const rawPrice = extractPrice(p.package?.price || '0')
+          const fg = p.photographer || 'Belum di-assign'
           
           let myProfit = 0
           let teamFee = 0
@@ -40,18 +40,17 @@ const fetchProjects = async () => {
           }
 
           return {
-            id: p.ID,
-            clientName: p.Client_Name || 'Tanpa Nama',
-            package: p.Package || 'Belum pilih paket',
+            id: p.id,
+            clientName: p.clientName || 'Tanpa Nama',
+            package: p.package?.name || 'Belum pilih paket',
             photographer: fg,
-            status: p.Status,
+            status: p.status,
             totalPrice: rawPrice,
             netProfit: myProfit,
             fgFee: teamFee,
-            shootDate: p.Shoot_Date || new Date()
+            shootDate: p.shootDate || new Date()
           }
         }).reverse()
-    }
   } catch (error) {
     Swal.fire('Error', 'Gagal menarik data keuangan.', 'error')
   } finally {
@@ -61,7 +60,7 @@ const fetchProjects = async () => {
 
 const extractPrice = (pkgString) => {
   if (!pkgString) return 0
-  const match = pkgString.match(/Rp\s*([\d.]+)/i)
+  const match = String(pkgString).match(/([\d.]+)/)
   if (match) return parseInt(match[1].replace(/\./g, ''))
   return 0
 }
@@ -312,20 +311,27 @@ const summary = computed(() => {
   return { gross, net, team }
 })
 
-onMounted(() => fetchProjects())
+onMounted(() => {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      fetchProjects(user.uid)
+    }
+  })
+})
 </script>
 
 <template>
-  <div class="max-w-7xl mx-auto space-y-8 pb-12">
+  <div class="min-h-screen font-sans transition-colors duration-500" :class="isDarkMode ? 'bg-[#0a0a0a] text-white' : 'bg-slate-50 text-slate-900'">
+    <div class="max-w-6xl mx-auto pb-12 pt-6 px-4 space-y-8">
     
     <div class="flex flex-col md:flex-row md:items-end justify-between gap-4">
       <div>
-        <h2 class="text-2xl font-bold text-slate-800">Finance & Invoices</h2>
-        <p class="text-slate-500 text-sm mt-1">Pantau total omset, profit bersih (net), dan fee untuk tim fotografer.</p>
+        <h2 class="text-3xl font-black tracking-tight uppercase" :class="isDarkMode ? 'text-white' : 'text-slate-900'">Finance & Invoices</h2>
+        <p class="text-sm font-medium mt-1" :class="isDarkMode ? 'text-gray-400' : 'text-slate-500'">Pantau total omset, profit bersih, dan operasional.</p>
       </div>
-      <button @click="fetchProjects" class="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center">
+      <button @click="fetchProjects(auth.currentUser?.uid)" class="px-6 py-3 rounded-full text-[10px] uppercase tracking-widest font-black shadow-sm transition-all flex items-center border border-slate-200" :class="isDarkMode ? 'bg-white/10 text-white border-white/10 hover:bg-white/20' : 'bg-white text-slate-900 hover:bg-slate-50'">
         <svg :class="{'animate-spin': isLoading}" class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Refresh Data
+        Refresh
       </button>
     </div>
 
@@ -337,17 +343,17 @@ onMounted(() => fetchProjects())
       
       <!-- Widget Ringkasan Keuangan (3 Kartu) -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+        <div class="p-8 rounded-[2rem] border relative overflow-hidden group transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100 shadow-sm'">
           <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 relative z-10">Total Omset (Gross)</p>
           <h3 class="text-3xl font-black text-slate-800 relative z-10">{{ formatRupiah(summary.gross) }}</h3>
           <p class="text-xs font-medium text-slate-400 mt-2 relative z-10">Total uang masuk dari klien.</p>
         </div>
-        <div class="bg-gradient-to-br from-indigo-600 to-indigo-800 p-6 rounded-3xl border border-indigo-500 shadow-md relative overflow-hidden group">
-          <p class="text-[10px] font-bold text-indigo-200 uppercase tracking-widest mb-1 relative z-10">Net Profit (Vixel / Owner)</p>
-          <h3 class="text-3xl font-black text-white relative z-10">{{ formatRupiah(summary.net) }}</h3>
-          <p class="text-xs font-medium text-indigo-200 mt-2 relative z-10">Omset dikurangi bagi hasil tim.</p>
+        <div class="p-8 rounded-[2rem] border relative overflow-hidden group transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-slate-900 border-black shadow-lg'">
+          <p class="text-[10px] font-bold uppercase tracking-widest mb-1 relative z-10" :class="isDarkMode ? 'text-cyan-400' : 'text-slate-400'">Net Profit (Owner)</p>
+          <h3 class="text-3xl font-black relative z-10 text-white">{{ formatRupiah(summary.net) }}</h3>
+          <p class="text-xs font-medium mt-2 relative z-10" :class="isDarkMode ? 'text-gray-400' : 'text-slate-400'">Omset dikurangi bagi hasil tim.</p>
         </div>
-        <div class="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm relative overflow-hidden group">
+        <div class="p-8 rounded-[2rem] border relative overflow-hidden group transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100 shadow-sm'">
           <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 relative z-10">Beban Fee Tim / FG</p>
           <h3 class="text-3xl font-black text-orange-600 relative z-10">{{ formatRupiah(summary.team) }}</h3>
           <p class="text-xs font-medium text-slate-400 mt-2 relative z-10">Total fee yang harus dibayar ke FG.</p>
@@ -355,34 +361,34 @@ onMounted(() => fetchProjects())
       </div>
 
       <!-- Tabel Rincian Keuangan per Project -->
-      <div class="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-        <div class="p-6 border-b border-slate-50 flex items-center justify-between">
-          <h3 class="text-sm font-bold text-slate-800">Rincian Bagi Hasil Project (Aktif)</h3>
-          <span class="text-xs font-bold bg-slate-100 text-slate-500 px-3 py-1 rounded-lg">Management Fee: {{ managementFeePercent * 100 }}%</span>
+      <div class="rounded-[2.5rem] border shadow-sm overflow-hidden transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
+        <div class="p-8 border-b flex items-center justify-between" :class="isDarkMode ? 'border-white/10' : 'border-slate-50'">
+          <h3 class="text-sm font-black uppercase tracking-widest" :class="isDarkMode ? 'text-white' : 'text-slate-800'">Rincian Keuangan Project</h3>
+          <span class="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-lg" :class="isDarkMode ? 'bg-white/10 text-gray-400' : 'bg-slate-100 text-slate-500'">Management Fee: {{ managementFeePercent * 100 }}%</span>
         </div>
         
         <div class="overflow-x-auto custom-scrollbar">
-          <table class="min-w-[900px] w-full divide-y divide-slate-100">
-            <thead class="bg-slate-50/50">
+          <table class="min-w-[900px] w-full divide-y" :class="isDarkMode ? 'divide-white/5' : 'divide-slate-100'">
+            <thead :class="isDarkMode ? 'bg-black/20' : 'bg-slate-50/50'">
               <tr>
-                <th class="py-4 pl-6 pr-3 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Client & Package</th>
-                <th class="px-3 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Status</th>
+                <th class="py-6 pl-8 pr-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Client & Package</th>
+                <th class="px-3 py-6 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</th>
                 <th class="px-3 py-4 text-left text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Harga</th>
-                <th class="px-3 py-4 text-left text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Profit (Owner)</th>
-                <th class="px-3 py-4 text-right text-[10px] font-bold text-orange-500 uppercase tracking-widest">Fee (FG / Tim)</th>
-                <th class="px-3 py-4 pr-6 text-center text-[10px] font-bold text-slate-400 uppercase tracking-widest">Print Dokumen</th>
+                <th class="px-3 py-6 text-left text-[10px] font-black uppercase tracking-widest" :class="isDarkMode ? 'text-cyan-400' : 'text-slate-900'">Profit (Owner)</th>
+                <th class="px-3 py-6 text-right text-[10px] font-black text-orange-500 uppercase tracking-widest">Fee (FG / Tim)</th>
+                <th class="px-3 py-6 pr-8 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Print Dokumen</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-50">
+            <tbody class="divide-y" :class="isDarkMode ? 'divide-white/5' : 'divide-slate-50'">
               
               <tr v-if="projects.length === 0">
                 <td colspan="6" class="text-center py-12 text-sm text-slate-400 font-bold">Belum ada project aktif yang bisa dihitung.</td>
               </tr>
 
-              <tr v-for="p in projects" :key="p.id" class="hover:bg-slate-50 transition-colors group">
-                <td class="py-4 pl-6 pr-3">
-                  <p class="text-sm font-bold text-slate-800 group-hover:text-indigo-600 transition-colors">{{ p.clientName }}</p>
-                  <p class="text-[10px] font-medium text-slate-500 mt-0.5 truncate max-w-[200px]">{{ p.package }}</p>
+              <tr v-for="p in projects" :key="p.id" class="transition-colors group" :class="isDarkMode ? 'hover:bg-white/5' : 'hover:bg-slate-50'">
+                <td class="py-4 pl-8 pr-3">
+                  <p class="text-sm font-bold transition-colors" :class="isDarkMode ? 'text-white' : 'text-slate-800'">{{ p.clientName }}</p>
+                  <p class="text-[10px] font-medium mt-0.5 truncate max-w-[200px]" :class="isDarkMode ? 'text-gray-500' : 'text-slate-500'">{{ p.package }}</p>
                 </td>
                 
                 <td class="px-3 py-4">
@@ -400,9 +406,9 @@ onMounted(() => fetchProjects())
 
                 <td class="px-3 py-4">
                   <div class="flex flex-col">
-                    <span class="text-sm font-black text-indigo-600">{{ formatRupiah(p.netProfit) }}</span>
-                    <span v-if="p.photographer === ownerName || p.photographer === 'Belum di-assign'" class="text-[9px] font-bold text-indigo-400 uppercase tracking-widest mt-0.5">📸 Eksekusi Sendiri (100%)</span>
-                    <span v-else class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">💼 Broker Fee ({{ managementFeePercent * 100 }}%)</span>
+                    <span class="text-sm font-black" :class="isDarkMode ? 'text-white' : 'text-slate-900'">{{ formatRupiah(p.netProfit) }}</span>
+                    <span v-if="p.photographer === ownerName || p.photographer === 'Belum di-assign'" class="text-[9px] font-bold uppercase tracking-widest mt-0.5" :class="isDarkMode ? 'text-cyan-400' : 'text-slate-400'">Eksekusi Sendiri (100%)</span>
+                    <span v-else class="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Broker Fee ({{ managementFeePercent * 100 }}%)</span>
                   </div>
                 </td>
 
@@ -416,7 +422,7 @@ onMounted(() => fetchProjects())
                 </td>
 
                 <!-- Tombol Cetak Dokumen -->
-                <td class="px-3 py-4 pr-6 text-center">
+                <td class="px-3 py-4 pr-8 text-center">
                   <div class="flex justify-center gap-2">
                     <!-- Tombol Invoice Klien -->
                     <button @click="printInvoiceClient(p)" class="inline-flex items-center justify-center bg-indigo-50 hover:bg-indigo-100 text-indigo-600 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all" title="Cetak Invoice Klien">
@@ -437,6 +443,7 @@ onMounted(() => fetchProjects())
         </div>
       </div>
 
+    </div>
     </div>
   </div>
 </template>

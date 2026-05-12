@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { auth, db } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, getDoc, collection, addDoc } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import Swal from 'sweetalert2'
 
 const route = useRoute()
@@ -80,35 +81,21 @@ const handleFileUpload = (event) => {
   proofFile.value = event.target.files[0]
 }
 
-// Upload file ke Drive pakai API Gateway yang baru
-const uploadProofToDrive = async () => {
+// Upload file Bukti Bayar ke Supabase
+const uploadProofToSupabase = async () => {
   if (!proofFile.value) return ''
 
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.readAsDataURL(proofFile.value)
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1]
-      try {
-        const resp = await fetch(import.meta.env.VITE_GAS_API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'UPLOAD_FILE',
-            vendorName: vendorData.value.vendorName,
-            fileName: `TF_${form.value.clientName.replace(/\s+/g, '_')}_${Date.now()}.${proofFile.value.type.split('/')[1]}`,
-            mimeType: proofFile.value.type,
-            base64: base64
-          })
-        })
-        const res = await resp.json()
-        resolve(res.status === 'success' ? res.url : '')
-      } catch (err) {
-        console.error("Gagal upload bukti:", err)
-        resolve('')
-      }
-    }
-  })
+  const fileExt = proofFile.value.name.split('.').pop()
+  const fileName = `TF_${form.value.clientName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`
+  try {
+    const { data, error } = await supabase.storage.from('shotflow-storage').upload(fileName, proofFile.value)
+    if (error) throw error
+    const { data: urlData } = supabase.storage.from('shotflow-storage').getPublicUrl(fileName)
+    return urlData.publicUrl
+  } catch (err) {
+    console.error(err)
+    return ''
+  }
 }
 
 // Eksekusi Form Booking
@@ -123,7 +110,7 @@ const submitBooking = async () => {
     // 1. Upload Bukti Transfer ke Drive (Kalau ada)
     let uploadedUrl = ''
     if (proofFile.value && form.value.paymentMethod !== 'Cash') {
-      uploadedUrl = await uploadProofToDrive()
+      uploadedUrl = await uploadProofToSupabase()
     }
 
     // 2. Format Data untuk disimpan di Pipeline
@@ -148,19 +135,18 @@ const submitBooking = async () => {
     await addDoc(collection(db, 'vendors', currentVendorId, 'projects'), projectData)
 
     Swal.fire({
-      title: 'Booking Terkirim! 🎉',
+      title: 'Booking Terkirim!',
       text: 'Admin kami akan mengecek ketersediaan jadwal dan segera menghubungi Anda via WhatsApp.',
       icon: 'success',
-      confirmButtonColor: '#4f46e5'
+      confirmButtonColor: '#0f172a' // Slate-900 
     })
     
-    // Reset manual setelah sukses
     form.value.clientName = ''
     form.value.university = ''
     proofFile.value = null
 
   } catch (error) {
-    Swal.fire('Waduh Gagal', 'Sistem sedang sibuk: ' + error.message, 'error')
+    Swal.fire('Gagal Menyimpan', 'Sistem sedang sibuk: ' + error.message, 'error')
   } finally {
     isSubmitting.value = false
   }
@@ -181,43 +167,42 @@ const formatRupiah = (angka) => {
 
     <div v-else class="max-w-3xl mx-auto bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
       
-      <div class="bg-indigo-600 px-8 py-10 text-white relative overflow-hidden">
+      <div class="bg-slate-900 px-8 py-10 text-white relative overflow-hidden">
         <div class="relative z-10 flex items-center justify-between">
           <div>
             <h2 class="text-3xl font-black mb-2 tracking-tight">{{ vendorData.vendorName || 'Formulir Booking' }}</h2>
-            <p class="text-indigo-100 text-sm font-medium">Amankan jadwal momen berhargamu.</p>
+            <p class="text-slate-400 text-sm font-medium">Amankan jadwal momen berhargamu.</p>
           </div>
           <img v-if="vendorData.logoUrl" :src="vendorData.logoUrl" class="w-16 h-16 object-contain bg-white rounded-xl p-1 shadow-lg" alt="Logo">
         </div>
-        <div class="absolute -right-10 -bottom-10 w-40 h-40 bg-indigo-500 rounded-full opacity-50 blur-2xl"></div>
       </div>
 
       <form @submit.prevent="submitBooking" class="p-8 space-y-8">
         
         <div>
-          <h3 class="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] border-b border-slate-100 pb-3 mb-5">01. Informasi Klien</h3>
+          <h3 class="text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-100 pb-3 mb-5">01. Informasi Klien</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Nama Lengkap & Gelar</label>
-              <input v-model="form.clientName" type="text" placeholder="Masukkan nama..." class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-indigo-500 transition-all font-bold text-sm">
+              <input v-model="form.clientName" type="text" placeholder="Masukkan nama..." class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-slate-900 transition-all font-bold text-sm">
             </div>
             <div>
               <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Universitas / Instansi</label>
-              <input v-model="form.university" type="text" placeholder="Nama kampus/sekolah..." class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-indigo-500 transition-all font-bold text-sm">
+              <input v-model="form.university" type="text" placeholder="Nama kampus/sekolah..." class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-slate-900 transition-all font-bold text-sm">
             </div>
             <div>
               <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">No. WhatsApp Aktif</label>
-              <input v-model="form.whatsapp" type="tel" placeholder="08xxxxxxxxxx" class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-indigo-500 transition-all font-bold text-sm">
+              <input v-model="form.whatsapp" @input="form.whatsapp = form.whatsapp.replace(/\D/g, '')" type="tel" placeholder="08xxxxxxxxxx" class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-slate-900 transition-all font-bold text-sm">
             </div>
             <div>
               <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Instagram</label>
-              <input v-model="form.instagram" type="text" placeholder="@username" class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-indigo-500 transition-all font-bold text-sm">
+              <input v-model="form.instagram" type="text" placeholder="@username" class="w-full border-2 border-slate-100 p-3.5 rounded-xl bg-slate-50 outline-none focus:bg-white focus:border-slate-900 transition-all font-bold text-sm">
             </div>
           </div>
         </div>
 
         <div>
-          <h3 class="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em] border-b border-slate-100 pb-3 mb-5">02. Detail Sesi Foto</h3>
+          <h3 class="text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-100 pb-3 mb-5">02. Detail Sesi Foto</h3>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div class="md:col-span-2">
               <label class="block text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Pilih Paket Layanan</label>

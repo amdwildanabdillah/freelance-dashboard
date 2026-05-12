@@ -64,12 +64,12 @@ const filteredProjects = computed(() => {
 // Bikin warna badge status jadi dinamis
 const getStatusBadge = (status) => {
   const styles = {
-    'lead': { text: 'LEAD', class: 'bg-slate-100 text-slate-600 border-slate-200' },
-    'dp': { text: 'DP / HALF', class: 'bg-blue-50 text-blue-600 border-blue-200' },
-    'booked': { text: 'BOOKED', class: 'bg-amber-50 text-amber-600 border-amber-200' },
-    'editing': { text: 'EDITING', class: 'bg-purple-50 text-purple-600 border-purple-200' },
-    'delivered': { text: 'DELIVERED', class: 'bg-green-50 text-green-600 border-green-200' },
-    'canceled': { text: 'CANCELED', class: 'bg-red-50 text-red-600 border-red-200' }
+    'lead': { text: 'LEAD', class: isDarkMode.value ? 'bg-gray-500/20 text-gray-400 border-gray-500/30' : 'bg-slate-100 text-slate-600 border-slate-200' },
+    'dp': { text: 'DP / HALF', class: isDarkMode.value ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-blue-50 text-blue-600 border-blue-200' },
+    'booked': { text: 'BOOKED', class: isDarkMode.value ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-amber-50 text-amber-600 border-amber-200' },
+    'editing': { text: 'EDITING', class: isDarkMode.value ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-purple-50 text-purple-600 border-purple-200' },
+    'delivered': { text: 'DELIVERED', class: isDarkMode.value ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-green-50 text-green-600 border-green-200' },
+    'canceled': { text: 'CANCELED', class: isDarkMode.value ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-red-50 text-red-600 border-red-200' }
   }
   return styles[status] || styles['lead']
 }

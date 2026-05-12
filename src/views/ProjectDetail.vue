@@ -4,6 +4,13 @@ import { ref, onMounted, computed, watch } from 'vue'
 import Swal from 'sweetalert2'
 
 const route = useRoute()
+const isDarkMode = ref(localStorage.getItem('theme') === 'dark')
+const applyGlobalTheme = () => {
+  if (isDarkMode.value) { document.body.style.backgroundColor = '#0a0a0a'; document.body.style.color = '#ffffff' }
+  else { document.body.style.backgroundColor = '#f8fafc'; document.body.style.color = '#0f172a' }
+}
+applyGlobalTheme()
+
 const projectId = route.params.id
 
 const isLoading = ref(true)
@@ -72,7 +79,7 @@ const getWaLink = () => {
   // Siapin teks otomatis
   const fg = teamDb.find(t => t.name === assignedPhotographerName.value)
   const fgIg = fg ? fg.ig : '-'
-  const msg = `Halo Kak ${project.value.clientName}, ini admin vendor foto. 👋\n\nIzin konfirmasi untuk sesi foto wisuda:\n📅 ${formatDateForDisplay(project.value.shootDate)}\n⏰ ${project.value.sessionTime} WIB\n📍 ${project.value.location}\n📸 FG: Mas ${assignedPhotographerName.value} (${fgIg})\n\nSampai jumpa! ✨`
+  const msg = `Halo Kak ${project.value.clientName}, ini admin vendor foto.\n\nIzin konfirmasi untuk sesi foto wisuda:\nTanggal: ${formatDateForDisplay(project.value.shootDate)}\nJam: ${project.value.sessionTime} WIB\nLokasi: ${project.value.location}\nFG: Mas ${assignedPhotographerName.value} (${fgIg})\n\nSampai jumpa!`
   
   return `https://wa.me/${cleaned}?text=${encodeURIComponent(msg)}`
 }
@@ -160,8 +167,9 @@ onMounted(() => { fetchProjectDetail() })
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto pb-12">
-    
+  <div class="min-h-screen w-full transition-colors duration-500" :class="isDarkMode ? 'bg-[#0a0a0a] text-white' : 'bg-slate-50 text-slate-900'">
+    <div class="max-w-6xl mx-auto p-6 md:p-10 space-y-8">
+
     <div v-if="isLoading" class="flex flex-col items-center justify-center h-64">
       <div class="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
       <p class="text-sm font-bold text-slate-500 animate-pulse">Menarik data dari database...</p>
@@ -171,12 +179,12 @@ onMounted(() => { fetchProjectDetail() })
       <!-- Header -->
       <div class="flex items-center justify-between mb-8">
         <div class="flex items-center space-x-4">
-          <router-link to="/pipeline" class="p-2 bg-white rounded-xl border border-slate-200 text-slate-400 hover:text-indigo-600 shadow-sm transition-all">
+          <router-link to="/pipeline" class="p-2 rounded-xl border shadow-sm transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10 text-gray-400 hover:text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-indigo-600'">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
           </router-link>
           <div>
-            <h2 class="text-2xl font-bold text-slate-900">{{ project.clientName }}</h2>
-            <p class="text-slate-500 text-sm font-medium uppercase tracking-tighter">ID: {{ projectId }} &bull; {{ project.package }}</p>
+            <h2 class="text-2xl font-bold" :class="isDarkMode ? 'text-white' : 'text-slate-900'">{{ project.clientName }}</h2>
+            <p class="text-sm font-medium uppercase tracking-tighter" :class="isDarkMode ? 'text-gray-400' : 'text-slate-500'">ID: {{ projectId }} &bull; {{ project.package }}</p>
           </div>
         </div>
         <div class="flex gap-2">
@@ -193,11 +201,11 @@ onMounted(() => { fetchProjectDetail() })
         <div class="lg:col-span-2 space-y-6">
           
           <!-- INFO KLIEN -->
-          <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm relative transition-all" :class="{'ring-2 ring-indigo-100': isEditingClient}">
+          <div class="rounded-3xl p-8 border shadow-sm relative transition-all" :class="[isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100', isEditingClient ? (isDarkMode ? 'ring-2 ring-cyan-500' : 'ring-2 ring-indigo-100') : '']">
             <div class="flex justify-between items-center mb-6">
               <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Informasi Klien & Event</h3>
-              <button @click="isEditingClient = !isEditingClient" class="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors" :class="isEditingClient ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100'">
-                {{ isEditingClient ? 'Batal Edit ✖' : 'Edit Data ✏️' }}
+              <button @click="isEditingClient = !isEditingClient" class="text-[10px] font-bold px-3 py-1.5 rounded-lg transition-colors" :class="isEditingClient ? 'bg-red-50 text-red-600 hover:bg-red-100' : (isDarkMode ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100')">
+                {{ isEditingClient ? 'Batal Edit' : 'Edit Data' }}
               </button>
             </div>
 
@@ -209,7 +217,7 @@ onMounted(() => { fetchProjectDetail() })
                   <div class="space-y-3">
                     <!-- WhatsApp Link Direct! -->
                     <a :href="getWaLink()" target="_blank"
-                      class="flex items-center text-slate-700 text-sm font-semibold hover:text-green-600 transition-all group p-1.5 -ml-1.5 rounded-xl hover:bg-green-50/50 cursor-pointer">
+                      class="flex items-center text-sm font-semibold hover:text-green-600 transition-all group p-1.5 -ml-1.5 rounded-xl hover:bg-green-50/50 cursor-pointer" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div
                         class="w-8 h-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center mr-3 shadow-sm group-hover:bg-green-200 group-hover:scale-105 transition-all">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -225,18 +233,18 @@ onMounted(() => { fetchProjectDetail() })
                       </span>
                     </a>
                     
-                    <div class="flex items-center text-slate-700 text-sm font-semibold">
+                    <div class="flex items-center text-sm font-semibold" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div class="w-8 h-8 rounded-lg bg-pink-50 text-pink-500 flex items-center justify-center mr-3"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
                       @{{ project.instagram || '-' }}
                     </div>
                     
-                    <div class="flex items-center text-slate-700 text-sm font-semibold">
+                    <div class="flex items-center text-sm font-semibold" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center mr-3"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l9-5-9-5-9 5 9 5z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" /></svg></div>
                       {{ project.university || '-' }}
                     </div>
 
                     <!-- Jumlah Peserta Baru! -->
-                    <div class="flex items-center text-slate-700 text-sm font-semibold">
+                    <div class="flex items-center text-sm font-semibold" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div class="w-8 h-8 rounded-lg bg-indigo-50 text-indigo-500 flex items-center justify-center mr-3"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg></div>
                       {{ project.participants || '1 Orang' }} (Jumlah Peserta)
                     </div>
@@ -246,17 +254,17 @@ onMounted(() => { fetchProjectDetail() })
                 <!-- Event Info -->
                 <div class="space-y-4">
                   <div class="space-y-3">
-                    <div class="flex items-center text-slate-700 text-sm font-semibold">
+                    <div class="flex items-center text-sm font-semibold" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div class="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 flex items-center justify-center mr-3"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg></div>
                       {{ formatDateForDisplay(project.shootDate) }}
                     </div>
                     
-                    <div class="flex items-center text-slate-700 text-sm font-semibold">
+                    <div class="flex items-center text-sm font-semibold" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div class="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 flex items-center justify-center mr-3"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>
                       {{ project.sessionTime }} WIB
                     </div>
                     
-                    <div class="flex items-center text-slate-700 text-sm font-semibold">
+                    <div class="flex items-center text-sm font-semibold" :class="isDarkMode ? 'text-gray-300' : 'text-slate-700'">
                       <div class="w-8 h-8 rounded-lg bg-slate-50 text-slate-500 flex items-center justify-center mr-3"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg></div>
                       {{ project.location }}
                     </div>
@@ -276,33 +284,33 @@ onMounted(() => { fetchProjectDetail() })
 
             <!-- MODE EDIT FORM -->
             <div v-else class="animate-fade-in grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Nama</label><input v-model="project.clientName" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">WhatsApp</label><input v-model="project.whatsapp" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Instagram</label><input v-model="project.instagram" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Universitas</label><input v-model="project.university" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Paket</label><input v-model="project.package" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Jumlah Orang</label><input v-model="project.participants" placeholder="Misal: 4 Orang" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Tanggal</label><input type="date" v-model="project.shootDate" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Jam</label><input type="time" v-model="project.sessionTime" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div class="md:col-span-2"><label class="text-[10px] font-bold text-slate-500 uppercase">Lokasi Detail</label><input v-model="project.location" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></div>
-              <div class="md:col-span-2"><label class="text-[10px] font-bold text-slate-500 uppercase">Catatan / Request Klien</label><textarea v-model="project.note" rows="2" class="w-full mt-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none"></textarea></div>
-              <div class="md:col-span-2 pt-2"><button @click="saveChanges" class="w-full py-3 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors">Simpan Perubahan Data</button></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Nama</label><input v-model="project.clientName" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">WhatsApp</label><input v-model="project.whatsapp" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Instagram</label><input v-model="project.instagram" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Universitas</label><input v-model="project.university" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Paket</label><input v-model="project.package" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Jumlah Orang</label><input v-model="project.participants" placeholder="Misal: 4 Orang" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Tanggal</label><input type="date" v-model="project.shootDate" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div><label class="text-[10px] font-bold text-slate-500 uppercase">Jam</label><input type="time" v-model="project.sessionTime" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div class="md:col-span-2"><label class="text-[10px] font-bold text-slate-500 uppercase">Lokasi Detail</label><input v-model="project.location" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></div>
+              <div class="md:col-span-2"><label class="text-[10px] font-bold text-slate-500 uppercase">Catatan / Request Klien</label><textarea v-model="project.note" rows="2" class="w-full mt-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200'"></textarea></div>
+              <div class="md:col-span-2 pt-2"><button @click="saveChanges" class="w-full py-3 rounded-xl text-xs font-bold transition-colors" :class="isDarkMode ? 'bg-cyan-500 text-white hover:bg-cyan-400' : 'bg-indigo-600 text-white hover:bg-indigo-700'">Simpan Perubahan Data</button></div>
             </div>
           </div>
 
           <!-- FG Assignment -->
-          <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
+          <div class="rounded-3xl p-8 border shadow-sm transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
             <div class="flex items-center justify-between mb-6">
               <h3 class="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Penugasan Fotografer</h3>
-              <select v-model="assignedPhotographerName" class="text-sm font-bold border border-slate-200 rounded-lg p-2.5 bg-slate-50 outline-none focus:border-indigo-500">
+              <select v-model="assignedPhotographerName" class="text-sm font-bold border rounded-lg p-2.5 outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20' : 'bg-slate-50 border-slate-200 focus:border-indigo-500'">
                 <option value="Belum di-assign">Belum di-assign</option>
                 <option v-for="fg in teamDb" :key="fg.id" :value="fg.name">{{ fg.name }}</option>
               </select>
             </div>
             <div v-if="gearChecklist.length > 0" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div v-for="(gear, index) in gearChecklist" :key="index" class="flex items-center p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <input type="checkbox" v-model="gear.done" class="w-4 h-4 rounded text-indigo-600 border-slate-300 mr-3">
-                <span class="text-xs font-bold text-slate-600" :class="{'line-through opacity-50': gear.done}">{{ gear.item }}</span>
+              <div v-for="(gear, index) in gearChecklist" :key="index" class="flex items-center p-3 rounded-xl border" :class="isDarkMode ? 'bg-black/20 border-white/10' : 'bg-slate-50 border-slate-100'">
+                <input type="checkbox" v-model="gear.done" class="w-4 h-4 rounded mr-3" :class="isDarkMode ? 'text-cyan-500' : 'text-indigo-600'">
+                <span class="text-xs font-bold" :class="[isDarkMode ? 'text-gray-300' : 'text-slate-600', {'line-through opacity-50': gear.done}]">{{ gear.item }}</span>
               </div>
             </div>
             <p v-else class="text-xs text-slate-400 font-medium text-center py-4">Pilih fotografer untuk melihat checklist alat.</p>
@@ -313,10 +321,10 @@ onMounted(() => { fetchProjectDetail() })
         <div class="space-y-6">
           
           <!-- Bukti TF (HOTFIX BALIK LAGI WKWK) -->
-          <div class="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+          <div class="rounded-3xl p-6 border shadow-sm transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
             <h3 class="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Payment Proof</h3>
             
-            <div class="relative rounded-2xl overflow-hidden border border-slate-100 h-40 mb-3 bg-slate-50 flex items-center justify-center group">
+            <div class="relative rounded-2xl overflow-hidden border h-40 mb-3 flex items-center justify-center group" :class="isDarkMode ? 'bg-black/20 border-white/10' : 'bg-slate-50 border-slate-100'">
               <!-- Render gambar kalau link bukan placeholder/kosong -->
               <img v-if="project.paymentProof && !project.paymentProof.includes('Belum+Ada')" :src="project.paymentProof" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
               
@@ -325,19 +333,19 @@ onMounted(() => { fetchProjectDetail() })
             </div>
             
             <!-- Tombol buat lihat full screen di tab baru -->
-            <a v-if="project.paymentProof && !project.paymentProof.includes('Belum+Ada')" :href="project.paymentProof" target="_blank" class="w-full flex items-center justify-center py-2.5 text-[10px] font-bold text-indigo-600 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition-colors">
+            <a v-if="project.paymentProof && !project.paymentProof.includes('Belum+Ada')" :href="project.paymentProof" target="_blank" class="w-full flex items-center justify-center py-2.5 text-[10px] font-bold rounded-xl transition-colors" :class="isDarkMode ? 'text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100'">
               LIHAT FULL SCREEN
             </a>
           </div>
 
           <!-- Manage Links -->
-          <div class="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm space-y-5">
-            <h3 class="text-[10px] font-bold text-slate-800 uppercase tracking-widest mb-2">Manage File Links</h3>
+          <div class="rounded-3xl p-6 border shadow-sm space-y-5 transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
+            <h3 class="text-[10px] font-bold uppercase tracking-widest mb-2" :class="isDarkMode ? 'text-white' : 'text-slate-800'">Manage File Links</h3>
             
             <div>
               <label class="block text-[9px] font-bold text-orange-500 uppercase tracking-widest mb-1.5">Master Folder</label>
               <div class="flex gap-2">
-                <input type="text" v-model="projectLinks.master" placeholder="Paste link..." class="flex-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none focus:border-orange-500">
+                <input type="text" v-model="projectLinks.master" placeholder="Paste link..." class="flex-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20 focus:border-orange-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-orange-500'">
                 <a :href="projectLinks.master || '#'" target="_blank" class="px-3 bg-orange-50 text-orange-600 rounded-xl flex items-center justify-center hover:bg-orange-100 transition-colors" :class="!projectLinks.master ? 'opacity-50 pointer-events-none' : ''">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
@@ -347,7 +355,7 @@ onMounted(() => { fetchProjectDetail() })
             <div>
               <label class="block text-[9px] font-bold text-blue-500 uppercase tracking-widest mb-1.5">RAW Backup</label>
               <div class="flex gap-2">
-                <input type="text" v-model="projectLinks.raw" placeholder="Paste link..." class="flex-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none focus:border-blue-500">
+                <input type="text" v-model="projectLinks.raw" placeholder="Paste link..." class="flex-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20 focus:border-blue-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-blue-500'">
                 <a :href="projectLinks.raw || '#'" target="_blank" class="px-3 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center hover:bg-blue-100 transition-colors" :class="!projectLinks.raw ? 'opacity-50 pointer-events-none' : ''">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
@@ -357,37 +365,38 @@ onMounted(() => { fetchProjectDetail() })
             <div>
               <label class="block text-[9px] font-bold text-green-500 uppercase tracking-widest mb-1.5">Final Edit</label>
               <div class="flex gap-2">
-                <input type="text" v-model="projectLinks.final" placeholder="Paste link..." class="flex-1 border border-slate-200 p-2.5 rounded-xl text-xs bg-slate-50 outline-none focus:border-green-500">
+                <input type="text" v-model="projectLinks.final" placeholder="Paste link..." class="flex-1 border p-2.5 rounded-xl text-xs outline-none" :class="isDarkMode ? 'bg-black/20 border-white/20 focus:border-green-500 text-white' : 'bg-slate-50 border-slate-200 focus:border-green-500'">
                 <a :href="projectLinks.final || '#'" target="_blank" class="px-3 bg-green-50 text-green-600 rounded-xl flex items-center justify-center hover:bg-green-100 transition-colors" :class="!projectLinks.final ? 'opacity-50 pointer-events-none' : ''">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
                 </a>
               </div>
             </div>
 
-            <button @click="saveChanges" class="w-full mt-2 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors">
+            <button @click="saveChanges" class="w-full mt-2 py-2.5 rounded-xl text-xs font-bold transition-colors" :class="isDarkMode ? 'bg-white text-black hover:bg-gray-200' : 'bg-slate-900 text-white hover:bg-slate-800'">
               Simpan Links
             </button>
           </div>
 
           <!-- Workflow Progress -->
-          <div class="bg-white rounded-3xl p-6 border border-slate-100 shadow-sm">
+          <div class="rounded-3xl p-6 border shadow-sm transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-[10px] font-bold text-indigo-500 uppercase tracking-widest">Workflow Progress</h3>
-              <span class="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-md">{{ progressPercentage }}%</span>
+              <span class="text-xs font-bold px-2.5 py-1 rounded-md" :class="isDarkMode ? 'text-cyan-400 bg-cyan-500/20' : 'text-indigo-600 bg-indigo-50'">{{ progressPercentage }}%</span>
             </div>
-            <div class="w-full bg-slate-100 rounded-full h-1.5 mb-6 overflow-hidden">
-              <div class="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" :style="`width: ${progressPercentage}%`"></div>
+            <div class="w-full rounded-full h-1.5 mb-6 overflow-hidden" :class="isDarkMode ? 'bg-white/10' : 'bg-slate-100'">
+              <div class="h-1.5 rounded-full transition-all duration-500" :class="isDarkMode ? 'bg-cyan-500' : 'bg-indigo-600'" :style="`width: ${progressPercentage}%`"></div>
             </div>
             <div class="space-y-3">
-              <div v-for="task in tasks" :key="task.id" class="flex items-center p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:border-indigo-300" @click="task.completed = !task.completed">
-                <input type="checkbox" v-model="task.completed" class="w-4 h-4 rounded text-indigo-600 border-slate-300 mr-3 pointer-events-none">
-                <span class="text-xs font-medium transition-colors" :class="task.completed ? 'text-slate-400 line-through' : 'text-slate-700'">{{ task.title }}</span>
+              <div v-for="task in tasks" :key="task.id" class="flex items-center p-3 rounded-xl border cursor-pointer transition-all" :class="[isDarkMode ? 'bg-black/20 border-white/10 hover:border-cyan-500/50' : 'bg-slate-50 border-slate-100 hover:border-indigo-300']" @click="task.completed = !task.completed">
+                <input type="checkbox" v-model="task.completed" class="w-4 h-4 rounded mr-3 pointer-events-none" :class="isDarkMode ? 'text-cyan-500' : 'text-indigo-600'">
+                <span class="text-xs font-medium transition-colors" :class="task.completed ? (isDarkMode ? 'text-gray-500 line-through' : 'text-slate-400 line-through') : (isDarkMode ? 'text-gray-300' : 'text-slate-700')">{{ task.title }}</span>
               </div>
             </div>
           </div>
 
         </div>
       </div>
+    </div>
     </div>
   </div>
 </template>

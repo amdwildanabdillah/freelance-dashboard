@@ -2,214 +2,133 @@
 import { ref, onMounted } from 'vue'
 import { auth, db } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { supabase } from '../supabase'
 import Swal from 'sweetalert2'
 
 const isSaving = ref(false)
 const isLoading = ref(true)
 const currentUser = ref(null)
 
-// Penampung Data Gabungan
+const isDarkMode = ref(localStorage.getItem('theme') === 'dark')
+
+// State untuk Identitas (diambil dari Firebase)
 const settings = ref({
-  // Owner Identity
-  ownerName: '',
-  ownerWhatsapp: '',
-  ownerInstagram: '',
-  ownerEmail: '',
-  
-  // Studio Identity
-  vendorName: '',
-  vendorTagline: '',
-  vendorWhatsapp: '',
-  vendorInstagram: '',
-  vendorTiktok: '',
-  vendorWebsite: '',
-  vendorAddress: '',
-  logoUrl: '',
+  fullName: '', whatsappOwner: '', igOwner: '', emailAdmin: '',
+  vendorName: '', vendorWhatsapp: '', igVendor: '', website: '', address: '', logoUrl: ''
 })
 
-// STATE LOGO YANG AMAN DARI BUG "LINK PALSU"
 const newLogoFile = ref(null)
 const logoPreview = ref('')
+const isUploadingLogo = ref(false)
+const logoUploadSuccess = ref(false)
 
-// Dynamic Lists
+// Operational Lists
 const packages = ref([])
 const addons = ref([])
-const team = ref([])
-const accounts = ref([])
-const equipments = ref([]) // <-- FITUR BARU INVENTARIS ALAT
+const banks = ref([])
+const inventory = ref([]) // Aset milik studio
+const team = ref([]) // Anggota tim & Alat mereka
 
-// Helper Functions buat List
-const addItem = (list, template) => list.push({ id: Date.now(), ...template })
-const removeItem = (list, index) => list.splice(index, 1)
+const addListItem = (list, template) => list.push({ id: Date.now(), ...template })
+const removeListItem = (list, index) => list.splice(index, 1)
 
 onMounted(() => {
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser.value = user
-      await fetchSettings()
+      await fetchAllData()
     }
   })
 })
 
-const fetchSettings = async () => {
+const fetchAllData = async () => {
   try {
-    const docRef = doc(db, 'vendors', currentUser.value.uid)
-    const docSnap = await getDoc(docRef)
-    
+    const docSnap = await getDoc(doc(db, 'vendors', currentUser.value.uid))
     if (docSnap.exists()) {
       const data = docSnap.data()
-      
+      // Map data sesuai struktur baru
       settings.value = {
-        ownerName: data.ownerName || '',
-        ownerWhatsapp: data.ownerWhatsapp || '',
-        ownerInstagram: data.igOwner || '',
-        ownerEmail: data.emailAdmin || currentUser.value.email,
-        
-        vendorName: data.vendorName || '',
-        vendorTagline: data.tagline || '',
-        vendorWhatsapp: data.whatsapp || '',
-        vendorInstagram: data.igVendor || '',
-        vendorTiktok: data.tiktok || '',
-        vendorWebsite: data.website || '',
-        vendorAddress: data.address || '',
-        logoUrl: data.logoUrl || ''
+        fullName: data.ownerInfo?.fullName || '',
+        whatsappOwner: data.ownerInfo?.whatsapp || '',
+        igOwner: data.ownerInfo?.instagram || '',
+        emailAdmin: data.ownerInfo?.emailAdmin || '',
+        vendorName: data.vendorInfo?.name || '',
+        vendorWhatsapp: data.vendorInfo?.whatsapp || '',
+        igVendor: data.vendorInfo?.instagram || '',
+        website: data.vendorInfo?.website || '',
+        address: data.vendorInfo?.address || '',
+        logoUrl: data.vendorInfo?.logoUrl || ''
       }
+      logoPreview.value = data.vendorInfo?.logoUrl || ''
       
-      // Tampilkan logo dari Firebase ke preview
-      logoPreview.value = data.logoUrl || ''
-      
-      packages.value = data.packages || []
-      addons.value = data.addons || []
-      team.value = data.team || []
-      accounts.value = data.banks || []
-      equipments.value = data.equipments || [] // Narik data alat
+      // Load operational data
+      packages.value = data.operational?.packages || []
+      addons.value = data.operational?.addons || []
+      banks.value = data.operational?.banks || []
+      inventory.value = data.operational?.inventory || []
+      team.value = data.operational?.team || []
     }
   } catch (error) {
     console.error(error)
-    Swal.fire('Error', 'Gagal memuat data settings.', 'error')
   } finally {
     isLoading.value = false
   }
 }
 
-// Cuma ubah preview lokal, database aman
-const handleLogoChange = (e) => {
+const handleLogoChange = async (e) => {
   const file = e.target.files[0]
-  if (file) {
-    newLogoFile.value = file
-    logoPreview.value = URL.createObjectURL(file)
-  }
-}
-
-// Upload Logo Diperbaiki (Lebih Tahan Banting)
-const uploadLogo = async () => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.readAsDataURL(newLogoFile.value)
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1]
-      try {
-        const resp = await fetch(import.meta.env.VITE_GAS_API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: JSON.stringify({
-            action: 'UPLOAD_FILE',
-            vendorName: settings.value.vendorName || 'Studio_Baru',
-            fileName: `LOGO_${Date.now()}.png`,
-            mimeType: newLogoFile.value.type,
-            base64: base64
-          })
-        })
-        const res = await resp.json()
-        if (res.status === 'success') {
-          resolve(res.url)
-        } else {
-          console.error("GAS Error:", res.msg)
-          resolve('') // Kalau error GAS, kembaliin kosong
-        }
-      } catch (e) { 
-        console.error("Fetch Error:", e)
-        resolve('') // Kalau error Jaringan, kembaliin kosong
-      }
-    }
-  })
-}
-
-const saveAll = async () => {
-  if (!settings.value.vendorName || !settings.value.ownerName) {
-    return Swal.fire('Oops', 'Nama Owner dan Vendor wajib diisi!', 'warning')
-  }
-
-  isSaving.value = true
+  if (!file) return
   
-  // Munculin Loading Gede biar user ga close tab pas proses bikin folder & upload
-  Swal.fire({
-    title: 'Menyimpan Data...',
-    text: 'Mohon tunggu sebentar, sedang sinkronisasi dengan database dan storage.',
-    allowOutsideClick: false,
-    didOpen: () => { Swal.showLoading() }
-  })
+  isUploadingLogo.value = true
+  logoUploadSuccess.value = false
 
   try {
-    // 1. PERINTAH PAKSA BIKIN FOLDER STORAGE DI DRIVE
-    await fetch(import.meta.env.VITE_GAS_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'CREATE_VENDOR_FOLDER',
-        vendorName: settings.value.vendorName
-      })
-    });
+    const fileExt = file.name.split('.').pop()
+    const fileName = `logo_${Date.now()}_${settings.value.vendorName.replace(/\s+/g, '_')}.${fileExt}`
+    const { data, error } = await supabase.storage.from('shotflow-storage').upload(fileName, file)
+    if (error) throw error
+    const { data: urlData } = supabase.storage.from('shotflow-storage').getPublicUrl(fileName)
+    settings.value.logoUrl = urlData.publicUrl
+    logoPreview.value = urlData.publicUrl
+    logoUploadSuccess.value = true
+  } catch (e) { Swal.fire('Gagal Upload', e.message, 'error') }
+  finally { isUploadingLogo.value = false }
+}
 
+const saveSettings = async () => {
+  isSaving.value = true
+  Swal.fire({ title: 'Menyimpan...', allowOutsideClick: false, didOpen: () => { Swal.showLoading() } })
+
+  try {
     const docRef = doc(db, 'vendors', currentUser.value.uid)
-    
-    // Ambil URL lama dulu
-    let finalLogo = settings.value.logoUrl 
-
-    // Kalau ada file baru, upload ke Drive
-    if (newLogoFile.value) {
-      const uploadedUrl = await uploadLogo()
-      if (uploadedUrl) {
-        finalLogo = uploadedUrl // Timpa pake link asli Google Drive
-      } else {
-        Swal.fire('Peringatan', 'Gagal upload Logo ke Drive, tapi data lain tersimpan.', 'warning')
+    await setDoc(docRef, {
+      ownerInfo: {
+        fullName: settings.value.fullName,
+        whatsapp: settings.value.whatsappOwner,
+        instagram: settings.value.igOwner,
+        emailAdmin: settings.value.emailAdmin
+      },
+      vendorInfo: {
+        name: settings.value.vendorName,
+        whatsapp: settings.value.vendorWhatsapp,
+        instagram: settings.value.igVendor,
+        website: settings.value.website,
+        address: settings.value.address,
+        logoUrl: settings.value.logoUrl
+      },
+      operational: {
+        packages: packages.value,
+        addons: addons.value,
+        banks: banks.value,
+        inventory: inventory.value,
+        team: team.value
       }
-    }
+    }, { merge: true })
 
-    // 2. SIMPAN SEMUA DATA KE FIREBASE
-    await updateDoc(docRef, {
-      ownerName: settings.value.ownerName,
-      ownerWhatsapp: settings.value.ownerWhatsapp,
-      igOwner: settings.value.ownerInstagram,
-      emailAdmin: settings.value.ownerEmail,
-      
-      vendorName: settings.value.vendorName,
-      tagline: settings.value.vendorTagline,
-      whatsapp: settings.value.vendorWhatsapp,
-      igVendor: settings.value.vendorInstagram,
-      tiktok: settings.value.vendorTiktok,
-      website: settings.value.vendorWebsite,
-      address: settings.value.vendorAddress,
-      logoUrl: finalLogo || '', 
-      
-      packages: packages.value.map(p => ({ ...p, price: Number(p.price) })),
-      addons: addons.value.map(a => ({ ...a, price: Number(a.price) })),
-      // Map ulang team & gears biar formatnya bersih masuk database (sesuai bahasan)
-      team: team.value.map(t => ({
-        id: t.id, name: t.name, role: t.role, status: t.status,
-        gears: t.gears ? t.gears.map(g => ({ name: g.name, type: g.type })) : []
-      })),
-      banks: accounts.value,
-      equipments: equipments.value // Simpan data alat studio
-    })
-
-    Swal.fire({ icon: 'success', title: 'Tersimpan!', text: 'Pengaturan studio berhasil diupdate.', timer: 2000, showConfirmButton: false })
-    newLogoFile.value = null // Reset file baru
-    settings.value.logoUrl = finalLogo // Sinkronisasi state internal
-
+    Swal.fire({ icon: 'success', title: 'Data Diperbarui', showConfirmButton: false, timer: 1500 })
   } catch (e) {
-    Swal.fire('Gagal Menyimpan', e.message, 'error')
+    Swal.fire('Gagal', e.message, 'error')
   } finally {
     isSaving.value = false
   }
@@ -217,165 +136,129 @@ const saveAll = async () => {
 </script>
 
 <template>
-  <div class="max-w-6xl mx-auto space-y-8 pb-20 px-4 mt-8 font-sans">
-    
-    <div v-if="isLoading" class="flex flex-col items-center justify-center min-h-[50vh]">
-      <div class="animate-spin h-10 w-10 border-4 border-indigo-600 border-t-transparent rounded-full mb-4"></div>
-      <p class="text-slate-400 font-bold">Sinkronisasi Database...</p>
-    </div>
+  <div class="min-h-screen relative font-sans transition-colors duration-500 overflow-hidden" :class="isDarkMode ? 'bg-[#0a0a0a] text-white' : 'bg-slate-50 text-slate-900'">
 
-    <div v-else class="space-y-10">
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+    <div class="max-w-6xl mx-auto py-10 px-4 space-y-8">
+      
+      <div class="flex flex-col md:flex-row justify-between md:items-center gap-4 p-8 rounded-[2rem] shadow-xl backdrop-blur-2xl transition-all duration-300" :class="isDarkMode ? 'bg-[#1a1a1a]/60 border border-white/10' : 'bg-white/60 border border-white/50'">
         <div>
-          <h2 class="text-2xl font-black text-slate-900">Vendor Management</h2>
-          <p class="text-sm text-slate-500 font-medium">Konfigurasi identitas, tim kreatif, dan aset inventaris studio.</p>
+          <h1 class="text-3xl font-black tracking-tight" :class="isDarkMode ? 'text-white' : 'text-slate-900'">Pengaturan Studio</h1>
+          <p class="text-sm font-medium mt-1" :class="isDarkMode ? 'text-gray-400' : 'text-slate-500'">Kelola identitas, layanan, dan ekosistem operasional.</p>
         </div>
-        <button @click="saveAll" :disabled="isSaving" class="w-full md:w-auto bg-indigo-600 text-white px-8 py-3.5 rounded-2xl font-bold text-sm shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center justify-center">
-          <span v-if="isSaving" class="animate-spin mr-2">⏳</span>
-          {{ isSaving ? 'Menyimpan...' : 'Simpan Perubahan' }}
+        <button @click="saveSettings" :disabled="isSaving || isUploadingLogo" class="px-8 py-4 rounded-full font-black text-xs uppercase tracking-widest shadow-xl active:scale-[0.98] transition-all flex items-center justify-center gap-2" :class="isDarkMode ? 'bg-white text-black hover:bg-gray-200' : 'bg-slate-900 text-white hover:bg-black'">
+           {{ isSaving ? 'Menyimpan...' : 'Simpan Perubahan' }}
         </button>
       </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div v-if="isLoading" class="text-center py-20 font-bold" :class="isDarkMode ? 'text-white/30' : 'text-slate-300'">Memuat Data Sistem...</div>
+
+      <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         <div class="lg:col-span-2 space-y-8">
-          <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <h3 class="text-[10px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-6">01. Owner Identity (Private)</h3>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Nama Lengkap Owner</label>
-                <input v-model="settings.ownerName" type="text" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all">
+          <!-- Identitas Card -->
+          <div class="p-8 rounded-[2rem] shadow-xl backdrop-blur-2xl transition-all duration-300" :class="isDarkMode ? 'bg-[#1a1a1a]/60 border border-white/10' : 'bg-white/60 border border-white/50'">
+             <h3 class="text-[10px] font-black uppercase tracking-widest mb-8" :class="isDarkMode ? 'text-cyan-400' : 'text-indigo-500'">01. Identitas Owner & Vendor</h3>
+             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="md:col-span-2 flex items-center gap-6 mb-4">
+                   <div class="w-20 h-20 rounded-full border-2 border-dashed overflow-hidden flex items-center justify-center transition-colors relative" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/20' : 'bg-slate-50 border-slate-300'">
+                      <div v-if="isUploadingLogo" class="absolute inset-0 flex items-center justify-center bg-black/50 z-10 backdrop-blur-sm"><span class="animate-spin text-white">⚙️</span></div>
+                      <img v-if="logoPreview" :src="logoPreview" class="w-full h-full object-contain p-2">
+                   </div>
+                   <div>
+                     <label class="px-6 py-2.5 rounded-full text-xs font-bold uppercase tracking-widest cursor-pointer transition-all border inline-block" :class="isDarkMode ? 'border-cyan-400 text-cyan-400 hover:bg-cyan-400 hover:text-black' : 'border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white'">
+                        {{ isUploadingLogo ? 'Mengunggah...' : 'Ganti Logo' }}
+                        <input type="file" @change="handleLogoChange" class="hidden" :disabled="isUploadingLogo">
+                     </label>
+                     <p v-if="logoUploadSuccess" class="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-2">Berhasil Diunggah ✓</p>
+                   </div>
+                </div>
+                <div>
+                  <label class="text-[10px] font-black uppercase tracking-widest" :class="isDarkMode ? 'text-gray-500' : 'text-slate-400'">Nama Owner</label>
+                  <input v-model="settings.fullName" placeholder="Nama Lengkap" class="w-full border-b-2 py-3 bg-transparent outline-none font-bold text-sm transition-all" :class="isDarkMode ? 'border-white/10 focus:border-cyan-400 text-white placeholder-gray-600' : 'border-slate-200 focus:border-indigo-500 text-slate-900 placeholder-slate-400'">
+                </div>
+                <div>
+                  <label class="text-[10px] font-black uppercase tracking-widest" :class="isDarkMode ? 'text-gray-500' : 'text-slate-400'">Nama Studio</label>
+                  <input v-model="settings.vendorName" placeholder="Nama Brand" class="w-full border-b-2 py-3 bg-transparent outline-none font-bold text-sm transition-all" :class="isDarkMode ? 'border-white/10 focus:border-cyan-400 text-white placeholder-gray-600' : 'border-slate-200 focus:border-indigo-500 text-slate-900 placeholder-slate-400'">
+                </div>
+                <div class="md:col-span-2">
+                  <label class="text-[10px] font-black uppercase tracking-widest" :class="isDarkMode ? 'text-gray-500' : 'text-slate-400'">Alamat Lengkap</label>
+                  <input v-model="settings.address" placeholder="Jalan, Kota, Provinsi" class="w-full border-b-2 py-3 bg-transparent outline-none font-bold text-sm transition-all" :class="isDarkMode ? 'border-white/10 focus:border-cyan-400 text-white placeholder-gray-600' : 'border-slate-200 focus:border-indigo-500 text-slate-900 placeholder-slate-400'">
+                </div>
+             </div>
+          </div>
+
+          <!-- Inventaris Card -->
+          <div class="p-8 rounded-[2rem] shadow-xl backdrop-blur-2xl transition-all duration-300" :class="isDarkMode ? 'bg-[#1a1a1a]/60 border border-white/10' : 'bg-white/60 border border-white/50'">
+            <h3 class="text-[10px] font-black uppercase tracking-widest mb-6" :class="isDarkMode ? 'text-blue-400' : 'text-purple-500'">02. Aset Inventaris Studio</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div v-for="(item, idx) in inventory" :key="item.id" class="flex items-center gap-3 p-4 rounded-2xl border transition-colors" :class="isDarkMode ? 'bg-black/20 border-white/10' : 'bg-white/40 border-white/50'">
+                <div class="flex-1">
+                  <input v-model="item.name" placeholder="Nama Alat (Sony, dll)" class="w-full bg-transparent text-sm font-bold outline-none" :class="isDarkMode ? 'text-white placeholder-gray-600' : 'text-slate-900 placeholder-slate-400'">
+                  <select v-model="item.type" class="text-[9px] font-black uppercase bg-transparent outline-none" :class="isDarkMode ? 'text-gray-500' : 'text-slate-400'">
+                    <option value="Kamera">Kamera</option>
+                    <option value="Lensa">Lensa</option>
+                    <option value="Aksesoris">Aksesoris</option>
+                  </select>
+                </div>
+                <button @click="removeListItem(inventory, idx)" class="hover:text-red-500" :class="isDarkMode ? 'text-white/30' : 'text-slate-300'">×</button>
               </div>
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Email Admin / SaaS</label>
-                <input v-model="settings.ownerEmail" type="email" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all">
-              </div>
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">WA Pribadi Owner</label>
-                <input v-model="settings.ownerWhatsapp" type="tel" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all">
-              </div>
-              <div>
-                <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Instagram Pribadi</label>
-                <input v-model="settings.ownerInstagram" type="text" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none transition-all">
-              </div>
+              <button @click="addListItem(inventory, {name: '', type: 'Kamera'})" class="w-full py-4 border border-dashed font-bold text-[10px] uppercase tracking-widest rounded-2xl transition-all" :class="isDarkMode ? 'border-white/20 text-white hover:bg-white/10' : 'border-slate-300 text-slate-600 hover:bg-slate-50'">+ Tambah Aset</button>
             </div>
           </div>
 
-          <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <h3 class="text-[10px] font-black text-blue-500 uppercase tracking-[0.2em] mb-6">02. Studio Identity (Public)</h3>
-            <div class="space-y-6">
-              <div class="flex items-center gap-6">
-                <div class="w-20 h-20 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-200 overflow-hidden p-2 flex items-center justify-center">
-                  <img v-if="logoPreview" :src="logoPreview" class="object-contain w-full h-full">
-                </div>
-                <label class="bg-blue-50 text-blue-600 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-100 cursor-pointer transition-all">
-                  Upload Logo
-                  <input type="file" class="hidden" @change="handleLogoChange" accept="image/*">
-                </label>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div class="md:col-span-2">
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Nama Studio / Brand</label>
-                  <input v-model="settings.vendorName" type="text" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all">
-                </div>
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">WA Official Studio</label>
-                  <input v-model="settings.vendorWhatsapp" type="tel" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all">
-                </div>
-                <div>
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Official Website</label>
-                  <input v-model="settings.vendorWebsite" type="text" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all">
-                </div>
-                <div class="md:col-span-2">
-                  <label class="block text-[10px] font-bold text-slate-400 uppercase mb-2">Tagline / Alamat Studio</label>
-                  <textarea v-model="settings.vendorAddress" rows="2" class="w-full border-2 border-slate-50 p-3.5 rounded-xl text-sm font-bold bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all"></textarea>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <h3 class="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em] mb-6">03. Packages & Add-ons</h3>
-            <div class="space-y-8">
-              <div>
-                <p class="text-xs font-bold text-slate-800 mb-4">Daftar Paket Utama</p>
-                <div class="space-y-3">
-                  <div v-for="(p, i) in packages" :key="p.id" class="flex gap-3">
-                    <input v-model="p.name" placeholder="Nama Paket" class="flex-1 border-2 border-slate-50 p-3 rounded-xl bg-slate-50 text-sm font-bold focus:bg-white focus:border-amber-400 outline-none">
-                    <input v-model="p.price" type="number" placeholder="Harga" class="w-1/3 border-2 border-slate-50 p-3 rounded-xl bg-slate-50 text-sm font-bold focus:bg-white focus:border-amber-400 outline-none">
-                    <button @click="removeItem(packages, i)" class="text-slate-300 hover:text-red-500 transition-colors">×</button>
+          <!-- Manajemen Tim Card -->
+          <div class="p-8 rounded-[2rem] shadow-xl backdrop-blur-2xl transition-all duration-300" :class="isDarkMode ? 'bg-[#1a1a1a]/60 border border-white/10' : 'bg-white/60 border border-white/50'">
+            <h3 class="text-[10px] font-black uppercase tracking-widest mb-6" :class="isDarkMode ? 'text-emerald-400' : 'text-emerald-500'">03. Manajemen Tim & Peralatan</h3>
+            <div class="space-y-4">
+              <div v-for="(member, idx) in team" :key="member.id" class="p-6 rounded-[2rem] border space-y-4 transition-colors" :class="isDarkMode ? 'bg-black/20 border-white/10' : 'bg-white/40 border-white/50'">
+                <div class="flex justify-between items-start">
+                  <div class="flex-1 grid grid-cols-2 gap-4">
+                     <input v-model="member.name" placeholder="Nama Member" class="w-full p-3 rounded-xl text-sm font-bold outline-none border transition-colors" :class="isDarkMode ? 'bg-black/40 border-white/10 text-white placeholder-gray-600 focus:border-emerald-400' : 'bg-white border-slate-200 text-slate-900 focus:border-emerald-500'">
+                     <select v-model="member.role" class="w-full p-3 rounded-xl text-sm font-bold outline-none border transition-colors cursor-pointer" :class="isDarkMode ? 'bg-black/40 border-white/10 text-white focus:border-emerald-400' : 'bg-white border-slate-200 text-slate-900 focus:border-emerald-500'">
+                       <option value="Owner">Owner</option>
+                       <option value="Admin">Admin</option>
+                       <option value="FG">Photographer (FG)</option>
+                       <option value="VG">Videographer (VG)</option>
+                       <option value="Editor">Editor</option>
+                     </select>
                   </div>
-                  <button @click="addItem(packages, {name: '', price: ''})" class="w-full py-3 border-2 border-dashed border-amber-100 text-amber-600 font-bold text-[10px] rounded-xl hover:bg-amber-50 transition-all">+ TAMBAH PAKET</button>
+                  <button @click="removeListItem(team, idx)" class="ml-4 hover:text-red-500" :class="isDarkMode ? 'text-white/30' : 'text-slate-300'">Hapus</button>
                 </div>
               </div>
-              <div>
-                <p class="text-xs font-bold text-slate-800 mb-4">Layanan Tambahan (Add-ons)</p>
-                <div class="space-y-3">
-                  <div v-for="(a, i) in addons" :key="a.id" class="flex gap-3">
-                    <input v-model="a.name" placeholder="Cth: Cetak 12R" class="flex-1 border-2 border-slate-50 p-3 rounded-xl bg-slate-50 text-sm font-bold focus:bg-white focus:border-amber-400 outline-none">
-                    <input v-model="a.price" type="number" placeholder="Harga" class="w-1/3 border-2 border-slate-50 p-3 rounded-xl bg-slate-50 text-sm font-bold focus:bg-white focus:border-amber-400 outline-none">
-                    <button @click="removeItem(addons, i)" class="text-slate-300 hover:text-red-500 transition-colors">×</button>
-                  </div>
-                  <button @click="addItem(addons, {name: '', price: ''})" class="w-full py-3 border-2 border-dashed border-amber-100 text-amber-600 font-bold text-[10px] rounded-xl hover:bg-amber-50 transition-all">+ TAMBAH ADD-ON</button>
-                </div>
-              </div>
+              <button @click="addListItem(team, {name: '', role: 'FG', eqStatus: 'Bawa Sendiri', eqDetails: ''})" class="w-full py-4 border border-dashed font-bold text-[10px] uppercase tracking-widest rounded-2xl transition-all" :class="isDarkMode ? 'border-white/20 text-white hover:bg-white/10' : 'border-slate-300 text-slate-600 hover:bg-slate-50'">+ Tambah Anggota</button>
             </div>
           </div>
         </div>
 
         <div class="space-y-8">
-          
-          <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <h3 class="text-[10px] font-black text-purple-500 uppercase tracking-[0.2em] mb-6">04. Inventaris Studio</h3>
-            <p class="text-[10px] text-slate-400 font-bold mb-4">Kelola aset kamera/alat yang bisa dipinjamkan.</p>
-            <div class="space-y-4">
-              <div v-for="(gear, i) in equipments" :key="gear.id" class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-50 relative group">
-                <button @click="removeItem(equipments, i)" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100">×</button>
-                <input v-model="gear.name" placeholder="Nama Alat (Cth: Sony A7III)" class="w-full bg-transparent font-bold text-sm outline-none border-b border-transparent focus:border-purple-300 mb-2">
-                <div class="flex gap-2">
-                  <select v-model="gear.type" class="w-1/2 bg-white text-[10px] font-bold text-slate-600 p-2 rounded-lg border border-slate-200 outline-none">
-                    <option value="Kamera">Kamera</option>
-                    <option value="Lensa">Lensa</option>
-                    <option value="Lighting">Lighting</option>
-                    <option value="Lainnya">Lainnya</option>
-                  </select>
-                  <select v-model="gear.owner" class="w-1/2 bg-white text-[10px] font-bold text-slate-600 p-2 rounded-lg border border-slate-200 outline-none">
-                    <option value="Milik Studio">Milik Studio</option>
-                    <option value="Milik Tim">Milik Tim</option>
-                    <option value="Sewa Luar">Sewa Luar</option>
-                  </select>
-                </div>
+           <!-- Layanan Card -->
+           <div class="p-8 rounded-[2rem] shadow-xl backdrop-blur-2xl transition-all duration-300" :class="isDarkMode ? 'bg-[#1a1a1a]/60 border border-white/10' : 'bg-white/60 border border-white/50'">
+              <h3 class="text-[10px] font-black uppercase tracking-widest mb-6" :class="isDarkMode ? 'text-amber-400' : 'text-amber-500'">04. Layanan & Paket</h3>
+              <div class="space-y-3 mb-6">
+                 <div v-for="(p, idx) in packages" :key="p.id" class="flex gap-2 items-center">
+                    <input v-model="p.name" placeholder="Nama Paket" class="flex-1 text-xs font-bold outline-none border-b bg-transparent py-2" :class="isDarkMode ? 'border-white/10 focus:border-amber-400 text-white placeholder-gray-600' : 'border-slate-200 focus:border-amber-500 text-slate-900 placeholder-slate-400'">
+                    <input v-model="p.price" @input="p.price = p.price.replace(/\D/g, '')" type="text" placeholder="Rp" class="w-24 text-xs font-bold outline-none border-b bg-transparent py-2" :class="isDarkMode ? 'border-white/10 focus:border-amber-400 text-white placeholder-gray-600' : 'border-slate-200 focus:border-amber-500 text-slate-900 placeholder-slate-400'">
+                    <button @click="removeListItem(packages, idx)" class="hover:text-red-500 px-2" :class="isDarkMode ? 'text-white/30' : 'text-slate-300'">×</button>
+                 </div>
+                 <button @click="addListItem(packages, {name: '', price: ''})" class="w-full py-3 font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all border border-dashed" :class="isDarkMode ? 'border-white/20 text-white hover:bg-white/10' : 'border-slate-300 text-slate-600 hover:bg-slate-50'">+ Tambah Paket</button>
               </div>
-              <button @click="addItem(equipments, {name: '', type: 'Kamera', owner: 'Milik Studio'})" class="w-full py-3 border-2 border-dashed border-purple-100 text-purple-600 font-bold text-[10px] rounded-xl hover:bg-purple-50 transition-all">+ TAMBAH ALAT</button>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <h3 class="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-6">05. Creative Team</h3>
-            <div class="space-y-4">
-              <div v-for="(t, i) in team" :key="t.id" class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-50 relative group">
-                <button @click="removeItem(team, i)" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100">×</button>
-                <input v-model="t.name" placeholder="Nama Member" class="w-full bg-transparent font-bold text-sm outline-none border-b border-transparent focus:border-emerald-300 mb-1">
-                <input v-model="t.role" placeholder="Role (Cth: Lead Photo)" class="w-full bg-transparent text-[10px] font-black text-slate-400 uppercase outline-none border-b border-transparent focus:border-emerald-300">
+           </div>
+  
+           <!-- Rekening Card -->
+           <div class="p-8 rounded-[2rem] shadow-xl backdrop-blur-2xl transition-all duration-300" :class="isDarkMode ? 'bg-[#1a1a1a]/60 border border-white/10' : 'bg-white/60 border border-white/50'">
+              <h3 class="text-[10px] font-black uppercase tracking-widest mb-6" :class="isDarkMode ? 'text-rose-400' : 'text-rose-500'">05. Rekening Pembayaran</h3>
+              <div class="space-y-4">
+                 <div v-for="(b, idx) in banks" :key="b.id" class="p-4 rounded-2xl relative group border transition-colors" :class="isDarkMode ? 'bg-black/20 border-white/10' : 'bg-white/40 border-white/50'">
+                    <input v-model="b.bankName" placeholder="Bank (BCA/BRI)" class="w-full bg-transparent text-[10px] font-black uppercase mb-1 outline-none" :class="isDarkMode ? 'text-rose-400 placeholder-gray-600' : 'text-rose-600 placeholder-slate-400'">
+                    <input v-model="b.number" @input="b.number = b.number.replace(/\D/g, '')" type="text" placeholder="Nomor Rekening" class="w-full bg-transparent text-sm font-bold outline-none mb-1" :class="isDarkMode ? 'text-white placeholder-gray-600' : 'text-slate-900 placeholder-slate-400'">
+                    <input v-model="b.owner" placeholder="Atas Nama" class="w-full bg-transparent text-[10px] font-bold uppercase outline-none" :class="isDarkMode ? 'text-gray-400 placeholder-gray-600' : 'text-slate-400 placeholder-slate-300'">
+                    <button @click="removeListItem(banks, idx)" class="absolute top-3 right-3 hover:text-red-500" :class="isDarkMode ? 'text-white/30' : 'text-slate-300'">×</button>
+                 </div>
+                 <button @click="addListItem(banks, {bankName: '', number: '', owner: ''})" class="w-full py-3 font-bold text-[10px] uppercase tracking-widest rounded-xl transition-all border border-dashed" :class="isDarkMode ? 'border-white/20 text-white hover:bg-white/10' : 'border-slate-300 text-slate-600 hover:bg-slate-50'">+ Tambah Rekening</button>
               </div>
-              <button @click="addItem(team, {name: '', role: '', status: 'Active'})" class="w-full py-3 border-2 border-dashed border-emerald-100 text-emerald-600 font-bold text-[10px] rounded-xl hover:bg-emerald-50 transition-all">+ TAMBAH TIM</button>
-            </div>
-          </div>
-
-          <div class="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-8">
-            <h3 class="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em] mb-6">06. Payment Accounts</h3>
-            <div class="space-y-4">
-              <div v-for="(b, i) in accounts" :key="b.id" class="p-4 rounded-2xl bg-slate-50 border-2 border-slate-50 group relative">
-                <button @click="removeItem(accounts, i)" class="absolute top-2 right-2 text-slate-300 hover:text-red-500 transition-opacity opacity-0 group-hover:opacity-100">×</button>
-                <input v-model="b.bank" placeholder="Bank" class="text-[10px] font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md mb-2 outline-none uppercase">
-                <input v-model="b.number" placeholder="Nomor Rekening" class="w-full bg-transparent font-mono font-bold text-sm outline-none mb-1">
-                <input v-model="b.owner" placeholder="Atas Nama" class="w-full bg-transparent text-[10px] font-bold text-slate-400 uppercase outline-none">
-              </div>
-              <button @click="addItem(accounts, {bank: '', number: '', owner: ''})" class="w-full py-3 border-2 border-dashed border-rose-100 text-rose-600 font-bold text-[10px] rounded-xl hover:bg-rose-50 transition-all">+ TAMBAH REKENING</button>
-            </div>
-          </div>
+           </div>
         </div>
-
+  
       </div>
     </div>
   </div>

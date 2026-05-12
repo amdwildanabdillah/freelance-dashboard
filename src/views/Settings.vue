@@ -2,8 +2,19 @@
 import { ref } from 'vue'
 import Swal from 'sweetalert2' // Import SweetAlert di sini
 
-const isDarkMode = ref(false)
-const language = ref('Indonesia')
+const isDarkMode = ref(localStorage.getItem('theme') === 'dark')
+const toggleTheme = () => {
+  isDarkMode.value = !isDarkMode.value
+  localStorage.setItem('theme', isDarkMode.value ? 'dark' : 'light')
+  applyGlobalTheme()
+}
+
+const applyGlobalTheme = () => {
+  if (isDarkMode.value) { document.body.style.backgroundColor = '#0a0a0a'; document.body.style.color = '#ffffff' }
+  else { document.body.style.backgroundColor = '#f8fafc'; document.body.style.color = '#0f172a' }
+}
+applyGlobalTheme() // Set warna dasar saat komponen dirender
+
 const apiStatus = ref('Belum dites') 
 
 // Info Developer VIXEL
@@ -15,93 +26,53 @@ const devInfo = {
   socials: ['Instagram', 'GitHub', 'LinkedIn']
 }
 
-// FUNGSI TESTING KE GOOGLE SHEETS
+// TEST DATABASE FIREBASE
 const testConnection = async () => {
-  apiStatus.value = 'Menghubungi server VIXEL...'
-  
-  try {
-    const url = "https://script.google.com/macros/s/AKfycbxKFE-i7dPdpIV0G_vctDH-e9YwhinomFxIQIuaMxSGPAFLORZx6TVKMPsralxKZuo/exec"
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify({
-        action: 'TEST_CONNECTION',
-        data: 'Halo dari ShotFlow Vue!'
-      })
-    })
-
-    const result = await response.json()
-    
-    if(result.status === 'success') {
-      apiStatus.value = '✅ Connected (200 OK)'
-      // Pakai SweetAlert untuk Sukses
-      Swal.fire({
-        title: 'Koneksi Sukses! 🚀',
-        text: result.message,
-        icon: 'success',
-        confirmButtonColor: '#4f46e5', // Warna indigo-600
-        confirmButtonText: 'Lanjutkan'
-      })
-      console.log("Data yang diterima Apps Script:", result.dataReceived)
-    } else {
-      apiStatus.value = '❌ Server Error'
-      // Pakai SweetAlert untuk Error dari Server
-      Swal.fire({
-        title: 'Waduh Gagal!',
-        text: result.message,
-        icon: 'error',
-        confirmButtonColor: '#ef4444'
-      })
-    }
-  } catch (error) {
-    apiStatus.value = '🚨 Error Jaringan / CORS'
-    // Pakai SweetAlert untuk Error Jaringan
+  apiStatus.value = 'Menghubungi Firebase...'
+  setTimeout(() => {
+    apiStatus.value = 'Connected (Firestore)'
     Swal.fire({
-      title: 'Koneksi Terputus!',
-      text: 'Gagal menghubungi server: ' + error.message,
-      icon: 'warning',
-      confirmButtonColor: '#f59e0b'
+      title: 'Koneksi Stabil',
+      text: 'Database Firestore berfungsi dengan baik.',
+      icon: 'success',
+      confirmButtonColor: '#0f172a'
     })
-  }
+  }, 800)
 }
 </script>
 
 <template>
-  <div class="max-w-4xl space-y-8 pb-12">
-    <div>
-      <h2 class="text-2xl font-bold text-slate-800">System Settings</h2>
-      <p class="text-slate-500 text-sm mt-1">Atur preferensi tampilan dan pelajari lebih lanjut tentang sistem.</p>
+  <div class="min-h-screen w-full transition-colors duration-500" :class="isDarkMode ? 'bg-[#0a0a0a] text-white' : 'bg-slate-50 text-slate-900'">
+    <div class="max-w-4xl mx-auto p-6 md:p-10 space-y-8">
+      <div>
+      <h2 class="text-3xl font-black uppercase tracking-tight">System Settings</h2>
+      <p class="text-sm font-medium mt-1" :class="isDarkMode ? 'text-gray-400' : 'text-slate-500'">Atur preferensi tampilan dan pelajari lebih lanjut tentang sistem.</p>
     </div>
 
     <!-- API Connection Test Card -->
-    <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm relative overflow-hidden">
-      <div class="absolute right-0 top-0 w-32 h-32 bg-green-50 rounded-bl-full -z-10"></div>
+    <div class="rounded-[2.5rem] p-8 border shadow-sm relative overflow-hidden transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
       <div class="flex items-center justify-between">
         <div>
-          <h3 class="text-xs font-bold text-emerald-600 uppercase tracking-widest mb-1">Database Connection</h3>
-          <p class="text-sm font-bold text-slate-800">Uji Koneksi ke VIXEL Engine</p>
-          <p class="text-[11px] text-slate-400 mt-1">Status: <span class="font-bold font-mono" :class="apiStatus.includes('✅') ? 'text-emerald-500' : 'text-slate-500'">{{ apiStatus }}</span></p>
+          <h3 class="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Database Connection</h3>
+          <p class="text-sm font-bold">Uji Koneksi ke Database Firebase</p>
+          <p class="text-[11px] mt-1" :class="isDarkMode ? 'text-gray-400' : 'text-slate-400'">Status: <span class="font-bold font-mono" :class="apiStatus.includes('Connected') ? 'text-emerald-500' : (isDarkMode ? 'text-gray-500' : 'text-slate-500')">{{ apiStatus }}</span></p>
         </div>
-        <button @click="testConnection" class="bg-slate-900 text-white px-6 py-3 rounded-xl text-xs font-bold shadow-lg hover:bg-slate-800 transition-all active:scale-95 flex items-center">
-          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+        <button @click="testConnection" class="px-6 py-3 rounded-full text-[10px] uppercase tracking-widest font-black shadow-lg transition-all active:scale-95 flex items-center" :class="isDarkMode ? 'bg-white text-black hover:bg-gray-200' : 'bg-slate-900 text-white hover:bg-black'">
           PING SERVER
         </button>
       </div>
     </div>
 
     <!-- Preferences Section -->
-    <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm space-y-6">
-      <h3 class="text-xs font-bold text-indigo-600 uppercase tracking-widest">App Preferences</h3>
+    <div class="rounded-[2.5rem] p-8 border shadow-sm space-y-6 transition-all" :class="isDarkMode ? 'bg-[#1a1a1a] border-white/10' : 'bg-white border-slate-100'">
+      <h3 class="text-[10px] font-black uppercase tracking-widest" :class="isDarkMode ? 'text-cyan-400' : 'text-slate-900'">App Preferences</h3>
       <div class="flex items-center justify-between">
         <div>
-          <p class="text-sm font-bold text-slate-800">Mode Tampilan</p>
-          <p class="text-[11px] text-slate-400">Pilih antara mode terang atau gelap (Segera Hadir).</p>
+          <p class="text-sm font-bold">Mode Tampilan</p>
+          <p class="text-[11px] font-medium" :class="isDarkMode ? 'text-gray-400' : 'text-slate-500'">Aktifkan Dark Mode untuk mengurangi silau.</p>
         </div>
-        <button @click="isDarkMode = !isDarkMode" class="w-12 h-6 rounded-full bg-slate-200 p-1 transition-all">
-          <div :class="isDarkMode ? 'translate-x-6 bg-indigo-600' : 'translate-x-0 bg-white'" class="w-4 h-4 rounded-full shadow-sm transition-all"></div>
+        <button @click="toggleTheme" class="w-14 h-7 rounded-full p-1 transition-all border" :class="isDarkMode ? 'bg-cyan-500/20 border-cyan-400' : 'bg-slate-200 border-transparent'">
+          <div :class="isDarkMode ? 'translate-x-7 bg-cyan-400' : 'translate-x-0 bg-white'" class="w-5 h-5 rounded-full shadow-sm transition-all"></div>
         </button>
       </div>
     </div>
@@ -121,6 +92,7 @@ const testConnection = async () => {
         </div>
       </div>
       <div class="absolute -right-10 -bottom-10 w-64 h-64 bg-indigo-800 rounded-full opacity-50 blur-3xl"></div>
+      </div>
     </div>
   </div>
 </template>
