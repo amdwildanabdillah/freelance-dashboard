@@ -55,6 +55,26 @@ onMounted(() => {
   })
 })
 
+// FUNGSI SAKTI BUAT COPY LINK BOOKING
+const copyBookingLink = () => {
+  if (!currentUser.value) {
+    return Swal.fire('Tunggu sebentar', 'Sistem sedang memuat data akunmu...', 'info')
+  }
+  
+  // Ngebaca domain otomatis + nambahin /book/ + UID Firebase kamu
+  const link = `${window.location.origin}/book/${currentUser.value.uid}`
+  
+  navigator.clipboard.writeText(link)
+  
+  Swal.fire({
+    title: 'Link Tersalin! 🔗',
+    text: 'Link booking studiamu siap disebar ke Bio Instagram atau Klien!',
+    icon: 'success',
+    confirmButtonColor: '#06b6d4',
+    timer: 2500
+  })
+}
+
 const parsePrice = (pkgString) => {
   if (!pkgString) return 0
   const match = pkgString.match(/Rp\s*([\d.]+)/i)
@@ -91,10 +111,11 @@ const recentProjects = computed(() => projects.value.slice(0, 5))
           <button @click="fetchProjects(currentUser?.uid)" class="w-10 h-10 rounded-full bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 flex items-center justify-center transition-all text-slate-600 dark:text-slate-300 shadow-sm" title="Refresh Data">
             <svg :class="{'animate-spin': isLoading}" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
           </button>
-          <RouterLink to="/book" target="_blank" class="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-lg shadow-cyan-500/30 active:scale-95 transition-all flex items-center">
+          
+          <button @click="copyBookingLink" class="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-lg shadow-cyan-500/30 hover:scale-105 active:scale-95 transition-all flex items-center cursor-pointer">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-            Public Booking Link
-          </RouterLink>
+            Copy Booking Link
+          </button>
         </div>
       </div>
 
