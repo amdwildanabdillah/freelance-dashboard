@@ -22,7 +22,7 @@ const handleSignIn = async () => {
   isLoading.value = true
   try {
     await signInWithEmailAndPassword(auth, email.value, password.value)
-    router.push('/') 
+    router.push('/dashboard') 
   } catch (error) {
     Swal.fire('Gagal', 'Email atau password salah.', 'error')
   } finally {
@@ -56,7 +56,7 @@ const loginWithGoogle = async () => {
     const vendorSnap = await getDoc(vendorRef)
 
     if (vendorSnap.exists()) {
-      router.push('/')
+      router.push('/dashboard')
     } else {
       await setDoc(vendorRef, {
         ownerInfo: { fullName: user.displayName, emailLogin: user.email, role: 'owner' },

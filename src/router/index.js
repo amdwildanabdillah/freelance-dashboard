@@ -13,20 +13,22 @@ import BookingForm from '../views/BookingForm.vue'
 import VendorSettings from '../views/VendorSettings.vue'
 
 const routes = [
-  // Rute Admin (Butuh Login & Pake Sidebar)
-  { path: '/', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } },
+  // RUTE PUBLIK (Tampil di depan, tanpa login)
+  { path: '/', name: 'Landing', component: () => import('../views/Landing.vue'), meta: { public: true } },
+  { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { public: true } },
+  // Tambahin :vendorId? biar sistem tau link ini buat vendor siapa
+  { path: '/book/:vendorId?', name: 'Form Booking Klien', component: BookingForm, meta: { public: true } }, 
+
+  // RUTE PRIVATE / ADMIN (Butuh Login & Pake Sidebar)
+  { path: '/dashboard', name: 'Dashboard', component: Dashboard, meta: { requiresAuth: true } }, // <-- Pindah ke /dashboard
   { path: '/pipeline', name: 'Pipeline Management', component: Pipeline, meta: { requiresAuth: true } },
   { path: '/calendar', name: 'Calendar & Schedule', component: Calendar, meta: { requiresAuth: true } },
   { path: '/clients', name: 'Client Database', component: Clients, meta: { requiresAuth: true } },
   { path: '/invoices', name: 'Invoices & Billing', component: Invoices, meta: { requiresAuth: true } },
-  { path: '/settings', name: 'Settings & Profile', component: Settings, meta: { requiresAuth: true } },
+  { path: '/settings', name: 'System Settings', component: Settings, meta: { requiresAuth: true } },
   { path: '/project/:id', name: 'Project Detail', component: ProjectDetail, meta: { requiresAuth: true } },
-  { path: '/vendor', name: 'Vendor & Team', component: VendorSettings, meta: { requiresAuth: true } },
-  { path: '/onboarding', name: 'Setup Vendor', component: () => import('../views/Onboarding.vue'), meta: { public: true } },
-  
-  // Rute Publik Klien & Auth (Tanpa Sidebar)
-  { path: '/book', name: 'Form Booking Klien', component: BookingForm, meta: { public: true } },
-  { path: '/login', name: 'Login', component: () => import('../views/Login.vue'), meta: { public: true } }
+  { path: '/vendor', name: 'Vendor Settings', component: VendorSettings, meta: { requiresAuth: true } },
+  { path: '/onboarding', name: 'Setup Vendor', component: () => import('../views/Onboarding.vue'), meta: { public: true } }
 ]
 
 const router = createRouter({
