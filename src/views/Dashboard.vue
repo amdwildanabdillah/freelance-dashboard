@@ -1,156 +1,105 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import Swal from 'sweetalert2'
 import { auth, db } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, query, getDocs, addDoc, doc, getDoc } from 'firebase/firestore'
-import Swal from 'sweetalert2'
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { useTheme } from '../theme'
+import html2pdf from 'html2pdf.js'
 
 const { isDark } = useTheme()
-
 const isLoading = ref(true)
 const projects = ref([])
-const userName = ref('Memuat...')
 const currentUser = ref(null)
-const vendorPlan = ref('free')
+
+const ownerName = ref('Wildan') 
+const managementFeePercent = ref(0.20) 
+const vendorInfo = ref({})
+
+const fetchVendorSettings = async (uid) => {
+  try {
+    const docSnap = await getDoc(doc(db, 'vendors', uid))
+    if (docSnap.exists()) {
+      const data = docSnap.data()
+      ownerName.value = data.ownerName || data.ownerInfo?.fullName || 'Wildan'
+      vendorInfo.value = {
+        name: data.vendorName || data.vendorInfo?.name || 'VIXEL CREATIVE',
+        whatsapp: data.vendorWhatsapp || data.vendorInfo?.whatsapp || '',
+        instagram: data.igVendor || data.vendorInfo?.instagram || '',
+        address: data.address || data.vendorInfo?.address || '',
+        banks: data.banks || data.operational?.banks || []
+      }
+    }
+  } catch (error) {
+    console.error("Gagal load setting vendor:", error)
+  }
+}
 
 const fetchProjects = async (uid) => {
   if (!uid) return
   isLoading.value = true
+  
+  await fetchVendorSettings(uid) 
+  
   try {
     const q = collection(db, 'vendors', uid, 'projects')
     const querySnapshot = await getDocs(q)
-    
-    const loadedProjects = []
-    querySnapshot.forEach((doc) => {
-      loadedProjects.push({ id: doc.id, ...doc.data() })
-    })
+    const rawData = []
+    querySnapshot.forEach(doc => rawData.push({ id: doc.id, ...doc.data() }))
 
-    projects.value = loadedProjects.map(p => ({
-      id: p.id,
-      clientName: p.clientName || 'Tanpa Nama',
-      university: p.university || '-',
-      package: p.package || '',
-      status: p.status || 'lead',
-      date: p.createdAt || new Date()
-    }))
-    
-    projects.value.sort((a, b) => new Date(b.date) - new Date(a.date))
+    const validStatuses = ['dp', 'booked', 'editing', 'delivered']
+      
+    projects.value = rawData
+        .filter(p => validStatuses.includes(p.status) || p.status === 'Menunggu DP')
+        .map(p => {
+          const rawPrice = extractPrice(p.package?.price || p.package || '0')
+          const fg = p.photographer || 'Belum di-assign'
+          
+          let myProfit = 0
+          let teamFee = 0
+          
+          if (fg === ownerName.value || fg === 'Belum di-assign') {
+            myProfit = rawPrice 
+          } else {
+            myProfit = rawPrice * managementFeePercent.value 
+            teamFee = rawPrice - myProfit 
+          }
+
+          let shootDateDisplay = 'TBD'
+          const targetDate = p.date || p.shootDate || p.createdAt
+          if (targetDate) {
+            const d = new Date(targetDate)
+            if (!isNaN(d)) {
+              shootDateDisplay = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })
+            }
+          }
+
+          return {
+            id: p.id,
+            clientName: p.clientName || 'Tanpa Nama',
+            whatsapp: p.whatsapp || '-',
+            university: p.university || '-',
+            package: p.package?.name || p.package || 'Custom',
+            photographer: fg,
+            status: p.status || 'lead',
+            totalPrice: rawPrice,
+            netProfit: myProfit,
+            fgFee: teamFee,
+            shootDate: shootDateDisplay,
+            rawDateForPrint: targetDate || new Date()
+          }
+        }).sort((a, b) => new Date(b.rawDateForPrint) - new Date(a.rawDateForPrint))
+        
   } catch (error) {
-    console.error("Gagal load data", error)
+    Swal.fire('Error', 'Gagal menarik data keuangan.', 'error')
   } finally {
     isLoading.value = false
   }
 }
 
-onMounted(() => {
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      userName.value = user.displayName || 'Bosku'
-      currentUser.value = user
-      fetchProjects(user.uid)
-      
-      // Mengambil plan dari Firestore
-      try {
-        const docSnap = await getDoc(doc(db, 'vendors', user.uid))
-        if (docSnap.exists()) {
-          vendorPlan.value = docSnap.data().plan || 'free'
-        }
-      } catch (error) {
-        console.error("Gagal memuat plan", error)
-      }
-
-    } else {
-      userName.value = 'Tamu'
-      isLoading.value = false
-    }
-  })
-})
-
-// FUNGSI SAKTI BUAT COPY LINK BOOKING
-const copyBookingLink = () => {
-  if (!currentUser.value) {
-    return Swal.fire('Tunggu sebentar', 'Sistem sedang memuat data akunmu...', 'info')
-  }
-  
-  // Ngebaca domain otomatis + nambahin /book/ + UID Firebase kamu
-  const link = `${window.location.origin}/book/${currentUser.value.uid}`
-  
-  navigator.clipboard.writeText(link)
-  
-  Swal.fire({
-    title: 'Link Tersalin! 🔗',
-    text: 'Link booking studiamu siap disebar ke Bio Instagram atau Klien!',
-    icon: 'success',
-    confirmButtonColor: '#06b6d4',
-    timer: 2500
-  })
-}
-
-// FUNGSI BUAT NAMBAH PROJECT MANUAL (Tanpa form klien)
-const addManualProject = async () => {
-  // Cegah error kalau data akun belum selesai dimuat
-  if (!currentUser.value) return
-
-  // Memunculkan pop-up form input pakai SweetAlert
-  const { value: formValues } = await Swal.fire({
-    title: 'Tambah Klien Manual',
-    html: `
-      <input id="swal-name" class="swal2-input" placeholder="Nama Klien / Instansi">
-      <input id="swal-univ" class="swal2-input" placeholder="Asal Kampus / Sekolah">
-      <select id="swal-status" class="swal2-input" style="display: flex; width: 73%; margin: 1em auto; font-size: 14px;">
-        <option value="lead">Lead (Baru Nanya)</option>
-        <option value="booked">Booked (Udah DP)</option>
-      </select>
-    `,
-    focusConfirm: false,
-    showCancelButton: true,
-    confirmButtonText: 'Simpan Data',
-    cancelButtonText: 'Batal',
-    confirmButtonColor: '#06b6d4',
-    preConfirm: () => {
-      // Mengambil nilai dari inputan pop-up
-      const name = document.getElementById('swal-name').value
-      if (!name) {
-        Swal.showValidationMessage('Nama klien wajib diisi bosku!')
-        return false
-      }
-      return {
-        clientName: name,
-        university: document.getElementById('swal-univ').value || '-',
-        status: document.getElementById('swal-status').value,
-        createdAt: new Date().toISOString()
-      }
-    }
-  })
-
-  // Kalau tombol "Simpan Data" ditekan dan datanya valid
-  if (formValues) {
-    isLoading.value = true
-    try {
-      // Tembak data baru ke database Firestore
-      await addDoc(collection(db, 'vendors', currentUser.value.uid, 'projects'), {
-        clientName: formValues.clientName,
-        university: formValues.university,
-        status: formValues.status,
-        createdAt: formValues.createdAt,
-        package: 'Rp 0' // Default harga 0 dulu biar gak error
-      })
-      
-      Swal.fire('Berhasil!', 'Klien manual udah masuk pipeline.', 'success')
-      
-      // Panggil fungsi ini biar tabel di bawah otomatis update datanya
-      fetchProjects(currentUser.value.uid) 
-    } catch (e) {
-      Swal.fire('Gagal Menyimpan', e.message, 'error')
-      isLoading.value = false
-    }
-  }
-}
-
-const parsePrice = (pkgString) => {
+const extractPrice = (pkgString) => {
   if (!pkgString) return 0
-  const match = pkgString.match(/Rp\s*([\d.]+)/i)
+  const match = String(pkgString).match(/([\d.]+)/)
   if (match) return parseInt(match[1].replace(/\./g, ''))
   return 0
 }
@@ -159,12 +108,199 @@ const formatRupiah = (angka) => {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(angka)
 }
 
-const totalClients = computed(() => projects.value.length)
-const totalRevenue = computed(() => projects.value.reduce((total, p) => total + parsePrice(p.package), 0))
-const pendingLeads = computed(() => projects.value.filter(p => p.status === 'lead').length)
-const completedProjects = computed(() => projects.value.filter(p => p.status === 'delivered').length)
+const summary = computed(() => {
+  let gross = 0; let net = 0; let team = 0
+  projects.value.forEach(p => { gross += p.totalPrice; net += p.netProfit; team += p.fgFee })
+  return { gross, net, team }
+})
 
-const recentProjects = computed(() => projects.value.slice(0, 5))
+onMounted(() => {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      currentUser.value = user
+      fetchProjects(user.uid)
+    } else {
+      isLoading.value = false
+    }
+  })
+})
+
+// ===================================================================
+// EXPORT PDF INVOICE KLIEN (DIRECT DOWNLOAD & MOBILE SUPPORT)
+// ===================================================================
+const printInvoiceClient = (p) => {
+  const d = new Date(p.rawDateForPrint)
+  const dateStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+  
+  let banksHtml = ''
+  if (vendorInfo.value.banks && vendorInfo.value.banks.length > 0) {
+    vendorInfo.value.banks.forEach(b => {
+      banksHtml += `
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+          <div style="width: 40px; height: 24px; background: #f8fafc; border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 9px; font-weight: 800; border: 1px solid #e2e8f0; color: #0f172a;">${b.bankName}</div>
+          <div style="font-size: 11px; line-height: 1.4; color: #0f172a; font-weight: 700; text-transform: uppercase;">
+            ${b.owner}
+            <span style="display: block; font-weight: 600; color: #64748b; font-size: 10px; font-family: monospace; letter-spacing: 1px; margin-top: 2px;">${b.number}</span>
+          </div>
+        </div>
+      `
+    })
+  } else {
+    banksHtml = '<p style="font-size:11px; color:#64748b;">Belum ada rekening yang diatur.</p>'
+  }
+  
+  const htmlContent = `
+    <div style="width: 800px; padding: 40px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #1e293b; box-sizing: border-box;">
+      <div style="background: #0f172a; color: white; padding: 30px 40px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;">${vendorInfo.value.name}</h1>
+          <p style="margin: 5px 0 0; font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">${vendorInfo.value.address || 'Photography & Videography Services'}</p>
+        </div>
+        <div style="text-align: right;">
+          <h2 style="margin:0; font-size: 24px; letter-spacing: 3px; font-weight: 900;">INVOICE</h2>
+          <p style="color: #94a3b8; font-family: monospace; font-size: 12px; margin-top: 5px;">#${p.id.substring(0,8).toUpperCase()}</p>
+        </div>
+      </div>
+      <div style="background: #06b6d4; height: 6px; width: 100%;"></div>
+
+      <div style="display: flex; justify-content: space-between; padding: 40px 40px 20px;">
+        <div style="font-size: 12px; line-height: 1.8; color: #475569;">
+          <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px;">To:</span>
+          <strong style="color: #0f172a; font-size: 14px; text-transform: uppercase;">${p.clientName}</strong><br>
+          Phone: ${p.whatsapp}<br>
+          Status: <span style="color: #06b6d4; font-weight: 800;">${p.status.toUpperCase()}</span>
+        </div>
+        <div style="font-size: 12px; line-height: 1.8; color: #475569; text-align: right;">
+          <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px;">Location / Univ:</span>
+          <strong style="color: #0f172a; font-size: 14px; text-transform: uppercase;">${p.university}</strong><br><br>
+          <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px;">Shoot Date:</span>
+          <strong style="color: #0f172a;">${dateStr}</strong>
+        </div>
+      </div>
+
+      <table style="width: calc(100% - 80px); margin: 0 40px 30px; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: left; letter-spacing: 1px;">Product Description</th>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: center; letter-spacing: 1px;">Qty</th>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: right; letter-spacing: 1px;">Price</th>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: right; letter-spacing: 1px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155;">
+              <strong style="font-size: 13px; color: #0f172a; text-transform: uppercase;">Documentation Service</strong><br>
+              <span style="font-size: 11px; color: #64748b; margin-top: 4px; display: inline-block;">Package: ${p.package}</span>
+            </td>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; text-align: center;">1</td>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding: 15px; padding-top: 30px; font-size: 12px; font-weight: 600; text-align: right;">Subtotal</td>
+            <td style="padding: 15px; padding-top: 30px; font-size: 12px; font-weight: 600; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding: 15px; font-weight: 800; font-size: 16px; color: #0f172a; text-align: right;">TOTAL</td>
+            <td style="padding: 15px; font-weight: 800; font-size: 16px; color: #06b6d4; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="padding: 10px 40px 40px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+          <h4 style="margin: 0 0 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #0f172a; font-weight: 800;">Payment Methods</h4>
+          ${banksHtml}
+        </div>
+        <div style="text-align: right; font-size: 12px; color: #0f172a; font-style: italic; font-weight: 600; letter-spacing: 1px;">
+          <p>create the moment<br>with us</p>
+          <div style="width: 60px; height: 1px; background: #0f172a; margin-left: auto; margin-top: 15px;"></div>
+        </div>
+      </div>
+    </div>
+  `
+
+  const opt = {
+    margin:       0,
+    filename:     `Invoice_${p.clientName}_${p.id.substring(0,8)}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+  }
+
+  Swal.fire({ title: 'Membuat PDF...', text: 'Mohon tunggu sebentar', allowOutsideClick: false, didOpen: () => Swal.showLoading() })
+  html2pdf().set(opt).from(htmlContent).save().then(() => Swal.close())
+}
+
+// ===================================================================
+// EXPORT PDF SLIP FEE FOTOGRAFER
+// ===================================================================
+const printInvoiceFG = (p) => {
+  const d = new Date(p.rawDateForPrint)
+  const dateStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+  
+  const htmlContent = `
+    <div style="width: 800px; padding: 40px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #1e293b; box-sizing: border-box;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px dashed #cbd5e1; padding-bottom: 24px; margin-bottom: 32px;">
+        <div>
+          <h1 style="margin: 0; color: #f97316; font-size: 28px; font-weight: 900; letter-spacing: -1px;">PAYMENT SLIP.</h1>
+          <p style="margin: 4px 0 0; color: #64748b; font-size: 14px; font-weight: 600;">${vendorInfo.value.name.toUpperCase()} MGMT</p>
+        </div>
+        <div style="text-align: right;">
+          <h2 style="margin: 0; font-size: 18px; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">FEE EKSEKUTOR</h2>
+          <p style="margin: 4px 0 0; color: #64748b; font-size: 12px;">ID: ${p.id.substring(0,8).toUpperCase()}</p>
+          <p style="margin: 4px 0 0; color: #64748b; font-size: 12px;">Terbit: ${new Date().toLocaleDateString('id-ID')}</p>
+        </div>
+      </div>
+      
+      <div style="background: #fff7ed; padding: 20px; border-radius: 12px; margin-bottom: 32px; border: 1px solid #ffedd5;">
+        <p style="color: #f97316; font-size: 11px; text-transform: uppercase; font-weight: 800; margin-bottom: 8px;">Dibayarkan Kepada:</p>
+        <p style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 4px 0;">${p.photographer}</p>
+        <p style="font-weight: 500; color: #475569; margin: 4px 0;">Tugas: <strong style="color: #ea580c;">Eksekusi Lapangan (FG/VG)</strong></p>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 32px;">
+        <thead>
+          <tr>
+            <th style="background-color: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; padding: 16px 12px; text-align: left;">Rincian Pekerjaan</th>
+            <th style="background-color: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; padding: 16px 12px; text-align: right;">Nominal Fee</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border-bottom: 1px solid #e2e8f0; padding: 16px 12px; font-size: 14px;">
+              Klien: <strong style="color: #0f172a;">${p.clientName} (${p.university})</strong><br>
+              <span style="font-size: 12px; color: #64748b; margin-top: 4px; display: inline-block;">Tanggal Sesi: ${dateStr}</span><br>
+              <span style="font-size: 12px; color: #64748b;">Paket: ${p.package}</span>
+            </td>
+            <td style="border-bottom: 1px solid #e2e8f0; padding: 16px 12px; font-size: 14px; text-align: right; vertical-align: top; font-weight: 600;">${formatRupiah(p.fgFee)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 12px; font-weight: 900; font-size: 16px; color: #0f172a; border-top: 2px solid #cbd5e1; text-align: right; padding-right: 24px;">TOTAL FEE DITERIMA</td>
+            <td style="padding: 16px 12px; font-weight: 900; font-size: 16px; color: #ea580c; border-top: 2px solid #cbd5e1; text-align: right;">${formatRupiah(p.fgFee)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 60px; padding-top: 20px; border-top: 1px dashed #e2e8f0;">
+        <p>Terima kasih atas kerja keras tim. Jaga selalu kualitas visual ${vendorInfo.value.name}!</p>
+        <p>Dokumen ini adalah bukti pencairan fee internal yang sah.</p>
+      </div>
+    </div>
+  `
+
+  const opt = {
+    margin:       0,
+    filename:     `Fee_${p.photographer}_${p.id.substring(0,8)}.pdf`,
+    image:        { type: 'jpeg', quality: 0.98 },
+    html2canvas:  { scale: 2, useCORS: true },
+    jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+  }
+
+  Swal.fire({ title: 'Membuat PDF...', text: 'Mohon tunggu sebentar', allowOutsideClick: false, didOpen: () => Swal.showLoading() })
+  html2pdf().set(opt).from(htmlContent).save().then(() => Swal.close())
+}
 </script>
 
 <template>
