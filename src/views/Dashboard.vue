@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { auth, db } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, query, getDocs } from 'firebase/firestore'
+import { collection, query, getDocs, addDoc, Doc, getDoc } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { useTheme } from '../theme'
 
@@ -12,6 +12,7 @@ const isLoading = ref(true)
 const projects = ref([])
 const userName = ref('Memuat...')
 const currentUser = ref(null)
+const vendorPlan = ref('free')
 
 const fetchProjects = async (uid) => {
   if (!uid) return
@@ -43,11 +44,22 @@ const fetchProjects = async (uid) => {
 }
 
 onMounted(() => {
-  onAuthStateChanged(auth, (user) => {
+  onAuthStateChanged(auth, async (user) => {
     if (user) {
       userName.value = user.displayName || 'Bosku'
       currentUser.value = user
       fetchProjects(user.uid)
+      
+      // Mengambil plan dari Firestore
+      try {
+        const docSnap = await getDoc(doc(db, 'vendors', user.uid))
+        if (docSnap.exists()) {
+          vendorPlan.value = docSnap.data().plan || 'free'
+        }
+      } catch (error) {
+        console.error("Gagal memuat plan", error)
+      }
+
     } else {
       userName.value = 'Tamu'
       isLoading.value = false
@@ -73,6 +85,67 @@ const copyBookingLink = () => {
     confirmButtonColor: '#06b6d4',
     timer: 2500
   })
+}
+
+// FUNGSI BUAT NAMBAH PROJECT MANUAL (Tanpa form klien)
+const addManualProject = async () => {
+  // Cegah error kalau data akun belum selesai dimuat
+  if (!currentUser.value) return
+
+  // Memunculkan pop-up form input pakai SweetAlert
+  const { value: formValues } = await Swal.fire({
+    title: 'Tambah Klien Manual',
+    html: `
+      <input id="swal-name" class="swal2-input" placeholder="Nama Klien / Instansi">
+      <input id="swal-univ" class="swal2-input" placeholder="Asal Kampus / Sekolah">
+      <select id="swal-status" class="swal2-input" style="display: flex; width: 73%; margin: 1em auto; font-size: 14px;">
+        <option value="lead">Lead (Baru Nanya)</option>
+        <option value="booked">Booked (Udah DP)</option>
+      </select>
+    `,
+    focusConfirm: false,
+    showCancelButton: true,
+    confirmButtonText: 'Simpan Data',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#06b6d4',
+    preConfirm: () => {
+      // Mengambil nilai dari inputan pop-up
+      const name = document.getElementById('swal-name').value
+      if (!name) {
+        Swal.showValidationMessage('Nama klien wajib diisi bosku!')
+        return false
+      }
+      return {
+        clientName: name,
+        university: document.getElementById('swal-univ').value || '-',
+        status: document.getElementById('swal-status').value,
+        createdAt: new Date().toISOString()
+      }
+    }
+  })
+
+  // Kalau tombol "Simpan Data" ditekan dan datanya valid
+  if (formValues) {
+    isLoading.value = true
+    try {
+      // Tembak data baru ke database Firestore
+      await addDoc(collection(db, 'vendors', currentUser.value.uid, 'projects'), {
+        clientName: formValues.clientName,
+        university: formValues.university,
+        status: formValues.status,
+        createdAt: formValues.createdAt,
+        package: 'Rp 0' // Default harga 0 dulu biar gak error
+      })
+      
+      Swal.fire('Berhasil!', 'Klien manual udah masuk pipeline.', 'success')
+      
+      // Panggil fungsi ini biar tabel di bawah otomatis update datanya
+      fetchProjects(currentUser.value.uid) 
+    } catch (e) {
+      Swal.fire('Gagal Menyimpan', e.message, 'error')
+      isLoading.value = false
+    }
+  }
 }
 
 const parsePrice = (pkgString) => {
@@ -103,7 +176,15 @@ const recentProjects = computed(() => projects.value.slice(0, 5))
         <div class="absolute -left-20 -bottom-20 w-64 h-64 bg-blue-500/10 dark:bg-blue-600/10 blur-3xl rounded-full pointer-events-none transition-all"></div>
 
         <div class="relative z-10">
-          <h2 class="text-2xl md:text-3xl font-bold tracking-tight mb-1.5 text-slate-900 dark:text-white">Welcome back, {{ userName }}.</h2>
+          <div class="flex items-center gap-3 mb-1.5 flex-wrap">
+            <h2 class="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Welcome back, {{ userName }}.</h2>
+            
+            <span v-if="vendorPlan === 'dev'" class="px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest bg-slate-900 text-white dark:bg-white dark:text-slate-900 rounded-md shadow-sm border border-slate-700">Developer</span>
+            <span v-else-if="vendorPlan === 'lifetime'" class="px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest bg-gradient-to-r from-amber-400 to-orange-500 text-white rounded-md shadow-sm">Lifetime Pro</span>
+            <span v-else-if="vendorPlan === 'pro'" class="px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 rounded-md border border-blue-200 dark:border-blue-500/20">Pro Bulanan</span>
+            <span v-else class="px-2.5 py-1 text-[9px] font-bold uppercase tracking-widest bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-gray-400 rounded-md border border-slate-200 dark:border-white/10">Free Starter</span>
+          </div>
+          
           <p class="text-xs md:text-sm font-medium text-slate-500 dark:text-gray-400">Here's what's happening with your studio today.</p>
         </div>
         
@@ -115,6 +196,11 @@ const recentProjects = computed(() => projects.value.slice(0, 5))
           <button @click="copyBookingLink" class="bg-gradient-to-r from-cyan-500 to-blue-600 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-lg shadow-cyan-500/30 hover:scale-105 active:scale-95 transition-all flex items-center cursor-pointer">
             <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
             Copy Booking Link
+          </button>
+
+          <button @click="addManualProject" class="bg-slate-900 dark:bg-white text-white dark:text-black px-5 py-2.5 rounded-full text-xs font-semibold shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center cursor-pointer">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            Input Manual
           </button>
         </div>
       </div>

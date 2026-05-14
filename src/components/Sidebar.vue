@@ -19,6 +19,15 @@ const vendorLogo = ref('')
 const userInitial = ref('')
 const imageError = ref(false)
 
+const vendorPlan = ref('free')
+const isAdmin = ref(false)
+
+const adminEmails = [
+  'amd.wildanabdillah@gmail.com',
+  'vixelcreative.id@gmail.com',
+  'lensapictura.graduate@gmail.com'
+]
+
 const menuItems = [
   { name: 'Dashboard', icon: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', path: '/dashboard' },
   { name: 'Pipeline', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01', path: '/pipeline' },
@@ -35,14 +44,17 @@ onMounted(() => {
       userName.value = user.displayName || 'User'
       userEmail.value = user.email
       userInitial.value = userName.value.charAt(0).toUpperCase()
+      isAdmin.value = adminEmails.includes(user.email)
       
       try {
         const docSnap = await getDoc(doc(db, 'vendors', user.uid))
-        if (docSnap.exists() && docSnap.data().logoUrl) {
-          vendorLogo.value = docSnap.data().logoUrl
+        if (docSnap.exists()) {
+          const data = docSnap.data()
+          if (data.logoUrl) vendorLogo.value = data.logoUrl
+          if (data.plan) vendorPlan.value = data.plan
         }
       } catch (error) {
-        console.error("Gagal narik logo", error)
+        console.error("Gagal narik logo/plan", error)
       }
     }
   })
@@ -77,29 +89,51 @@ const handleImageError = () => { imageError.value = true }
     </div>
 
     <nav class="flex-1 px-4 space-y-1 mt-2 overflow-y-auto custom-scrollbar pb-4">
+      <p class="px-4 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-gray-500 mb-2">Main Menu</p>
       <router-link v-for="item in menuItems" :key="item.name" :to="item.path" @click="emit('close')" 
         class="flex items-center px-4 py-3.5 text-[13px] font-medium rounded-2xl transition-all group" 
         :class="[route.path === item.path ? 'bg-cyan-50 dark:bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 shadow-sm border border-cyan-100 dark:border-cyan-500/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50/80 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white']">
         <svg class="w-5 h-5 mr-3 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" :d="item.icon" /></svg>
         {{ item.name }}
       </router-link>
+
+      <router-link v-if="isAdmin" to="/admin" @click="emit('close')"
+        class="flex items-center px-4 py-3.5 text-[13px] font-medium rounded-2xl transition-all text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 mt-4 border border-transparent hover:border-emerald-200 dark:hover:border-emerald-500/20">
+        <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04M12 2.944V22m0-19.056c1.057 0 2.086.167 3.051.477a11.956 11.956 0 014.567 2.537" /></svg>
+        Admin Console
+      </router-link>
     </nav>
 
     <div class="p-4 mt-auto">
+      
+      <div v-if="vendorPlan === 'free'" class="mb-4 p-4 bg-gradient-to-br from-cyan-500/10 to-blue-500/10 border border-cyan-500/20 rounded-2xl relative overflow-hidden group">
+        <div class="absolute -right-4 -top-4 w-16 h-16 bg-cyan-400/20 blur-xl rounded-full group-hover:bg-cyan-400/40 transition-colors"></div>
+        <h4 class="text-[10px] font-black uppercase tracking-widest text-cyan-600 dark:text-cyan-400 mb-1">Studio Pro</h4>
+        <p class="text-[10px] font-medium text-slate-500 dark:text-gray-400 mb-3">Unlimited & Fitur Penuh.</p>
+        <a href="https://wa.me/6282232053253?text=Halo%20Vixel!%20Saya%20mau%20upgrade%20akun%20Shotflow%20ke%20Pro%20Lifetime.%20Minta%20nomor%20rekeningnya%20dong!" target="_blank" class="block w-full py-2 bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-[10px] font-bold text-center uppercase tracking-widest rounded-lg shadow-md hover:scale-105 active:scale-95 transition-all">
+          Upgrade Sekarang
+        </a>
+      </div>
+
+      <div v-else class="mb-4 p-4 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl">
+        <h4 class="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2">Subscription</h4>
+        <div class="flex items-center justify-between">
+          <span class="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase">{{ vendorPlan }} Account</span>
+          <div class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+        </div>
+      </div>
+
       <div class="flex items-center justify-between p-2.5 rounded-2xl bg-white/50 dark:bg-black/20 border border-white/50 dark:border-white/5 transition-colors shadow-sm">
         <div class="flex items-center flex-1 min-w-0">
-          
           <div class="w-9 h-9 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center text-slate-700 dark:text-white font-bold text-xs mr-3 shrink-0 shadow-sm border border-white/60 dark:border-white/10 overflow-hidden">
             <img v-if="vendorLogo && !imageError" :src="vendorLogo" @error="handleImageError" class="w-full h-full object-cover" alt="Logo" />
             <span v-else>{{ userInitial }}</span>
           </div>
-          
           <div class="flex-1 min-w-0 pr-2">
             <p class="text-[11px] font-semibold text-slate-800 dark:text-white truncate tracking-tight">{{ userName }}</p>
             <p class="text-[9px] text-slate-500 dark:text-gray-400 font-medium truncate">{{ userEmail }}</p>
           </div>
         </div>
-        
         <div class="flex items-center space-x-1 shrink-0">
           <button @click="toggleTheme" class="p-1.5 text-slate-400 hover:text-amber-500 bg-transparent hover:bg-white dark:hover:bg-white/10 rounded-full transition-all" title="Toggle Theme">
             <svg v-if="isDark" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>

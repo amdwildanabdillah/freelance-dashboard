@@ -28,7 +28,10 @@ const routes = [
   { path: '/settings', name: 'System Settings', component: Settings, meta: { requiresAuth: true } },
   { path: '/project/:id', name: 'Project Detail', component: ProjectDetail, meta: { requiresAuth: true } },
   { path: '/vendor', name: 'Vendor Settings', component: VendorSettings, meta: { requiresAuth: true } },
-  { path: '/onboarding', name: 'Setup Vendor', component: () => import('../views/Onboarding.vue'), meta: { public: true } }
+  { path: '/onboarding', name: 'Setup Vendor', component: () => import('../views/Onboarding.vue'), meta: { public: true } },
+
+  // HALAMAN RAHASIA ADMIN VIXEL
+  { path: '/admin', name: 'Admin Panel', component: () => import('../views/Admin.vue'), meta: { requiresAuth: true } }
 ]
 
 const router = createRouter({

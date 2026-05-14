@@ -6,6 +6,8 @@ import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { supabase } from '../supabase'
 import { useTheme } from '../theme'
 import Swal from 'sweetalert2'
+import {deleteUser} from 'firebase/auth'
+import {deleteDoc} from 'firebase/firestore'
 
 const { isDark } = useTheme()
 const isSaving = ref(false)
@@ -143,7 +145,34 @@ const saveSettings = async () => {
   } finally { 
     isSaving.value = false 
   }
+
+  
 }
+
+const deleteAccount = async () => {
+  const result = await Swal.fire({
+    title: 'Hapus Akun Permanen?',
+    text: 'Seluruh data studio akan dihapus. Tindakan ini tidak dapat dibatalkan.',
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#ef4444',
+    cancelButtonColor: '#1e293b',
+    confirmButtonText: 'Hapus Sekarang'
+  })
+
+  if (result.isConfirmed) {
+    try {
+      const user = auth.currentUser
+      if (!user) return
+      await deleteDoc(doc(db, 'vendors', user.uid))
+      await deleteUser(user)
+      window.location.href = '/'
+    } catch (error) {
+      Swal.fire('Gagal', 'Silakan logout dan login kembali untuk alasan keamanan sebelum menghapus akun.', 'error')
+    }
+  }
+}
+
 </script>
 
 <template>
@@ -258,17 +287,27 @@ const saveSettings = async () => {
       <div class="space-y-6 md:space-y-8">
         
         <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-6 shadow-sm">
-          <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Rekening Pembayaran</h3>
-          <div class="space-y-4 mb-4">
-            <div v-for="(bank, idx) in banks" :key="bank.id" class="p-4 bg-slate-50 dark:bg-white/5 rounded-2xl relative border border-slate-200/60 dark:border-white/10 group">
-              <button @click="removeListItem(banks, idx)" class="absolute top-2 right-2 p-1 text-slate-300 dark:text-gray-600 hover:text-rose-500 transition-colors opacity-0 md:opacity-100 group-hover:opacity-100"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-              <input v-model="bank.bankName" placeholder="Bank (Cth: BCA)" class="w-full bg-transparent text-[10px] font-bold text-cyan-600 dark:text-cyan-400 uppercase outline-none mb-1">
-              <input v-model="bank.number" placeholder="No. Rekening" class="w-full bg-transparent font-mono font-semibold text-sm outline-none mb-1 text-slate-900 dark:text-white">
-              <input v-model="bank.owner" placeholder="Atas Nama" class="w-full bg-transparent text-[10px] font-medium text-slate-500 dark:text-gray-400 uppercase outline-none">
-            </div>
-          </div>
-          <button @click="addListItem(banks, { bankName: '', number: '', owner: '' })" class="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/20 text-slate-500 dark:text-gray-400 text-[11px] font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Rekening</button>
-        </div>
+  <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Rekening Pembayaran</h3>
+  <div class="space-y-4 mb-4">
+    <div v-for="(bank, idx) in banks" :key="bank.id" class="p-5 bg-slate-50/50 dark:bg-white/5 rounded-2xl relative border border-slate-200/60 dark:border-white/10 group space-y-3">
+      <button @click="removeListItem(banks, idx)" class="absolute top-3 right-3 p-1.5 bg-white dark:bg-[#1a1a1a] rounded-md text-slate-400 hover:text-rose-500 transition-all border border-slate-200/60 dark:border-white/10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+      
+      <div>
+        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nama Bank / E-Wallet</label>
+        <input v-model="bank.bankName" placeholder="Cth: BCA / DANA / JAGO" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase outline-none focus:border-cyan-500/50 mt-1">
+      </div>
+      <div>
+        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nomor Rekening</label>
+        <input v-model="bank.number" placeholder="Masukkan nomor rekening" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl font-mono font-bold text-sm outline-none text-slate-900 dark:text-white focus:border-cyan-500/50 mt-1">
+      </div>
+      <div>
+        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Atas Nama (Pemilik)</label>
+        <input v-model="bank.owner" placeholder="Sesuai buku tabungan" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl text-xs font-semibold text-slate-700 dark:text-gray-300 uppercase outline-none focus:border-cyan-500/50 mt-1">
+      </div>
+    </div>
+  </div>
+  <button @click="addListItem(banks, { bankName: '', number: '', owner: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">+ Tambah Rekening</button>
+</div>
 
         <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-4 shadow-sm">
           <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Workflow Template (SOP)</h3>
@@ -301,6 +340,14 @@ const saveSettings = async () => {
         </div>
 
       </div>
+    </div>
+
+    <div class="mt-12 pt-8 border-t border-rose-100 dark:border-rose-900/30 px-6 md:px-8">
+      <h3 class="text-xs font-bold uppercase tracking-widest text-rose-500 mb-2">Danger Zone</h3>
+      <p class="text-[11px] text-slate-500 dark:text-gray-400 mb-4">Tindakan ini akan menghapus seluruh profil dan data klien secara permanen.</p>
+      <button @click.prevent="deleteAccount" class="px-5 py-2.5 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 text-[10px] font-bold uppercase tracking-widest rounded-xl hover:bg-rose-100 transition-all">
+        Hapus Akun Studio
+      </button>
     </div>
 
     <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 transition-all w-[90%] max-w-sm">
