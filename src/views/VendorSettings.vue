@@ -1,13 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { auth, db } from '../firebase'
-import { onAuthStateChanged } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { onAuthStateChanged, deleteUser } from 'firebase/auth'
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
 import { supabase } from '../supabase'
 import { useTheme } from '../theme'
 import Swal from 'sweetalert2'
-import {deleteUser} from 'firebase/auth'
-import {deleteDoc} from 'firebase/firestore'
 
 const { isDark } = useTheme()
 const isSaving = ref(false)
@@ -27,10 +25,14 @@ const addons = ref([])
 const banks = ref([])
 const inventory = ref([])
 const team = ref([])
-const workflowTemplate = ref([]) // <-- INI PENAMPUNG SOP BAWAANNYA
+const workflowTemplate = ref([])
 
 const addListItem = (list, template) => list.push({ id: Date.now(), ...template })
 const removeListItem = (list, index) => list.splice(index, 1)
+
+const filterNumber = (field) => {
+  settings.value[field] = settings.value[field].replace(/\D/g, '')
+}
 
 onMounted(() => {
   onAuthStateChanged(auth, async (user) => {
@@ -40,10 +42,6 @@ onMounted(() => {
     }
   })
 })
-
-const filterNumber = (field) => {
-  settings.value[field] = settings.value[field].replace(/\D/g, '')
-}
 
 const fetchAllData = async () => {
   try {
@@ -73,7 +71,6 @@ const fetchAllData = async () => {
       inventory.value = data.inventory || data.operational?.inventory || []
       team.value = data.team || data.operational?.team || []
       
-      // Default Template kalau vendor baru banget
       workflowTemplate.value = data.workflowTemplate || [
         { id: 1, title: 'Backup & Sortir Folder (Vid, .arw, .jpg)' },
         { id: 2, title: 'Upload RAW ke Drive & Share Link' },
@@ -127,59 +124,59 @@ const saveSettings = async () => {
       vendorInstagram: settings.value.vendorInstagram,
       vendorEmail: settings.value.vendorEmail,
       address: settings.value.address,
-      logoUrl: finalLogo || '',
+      logoUrl: finalLogo || settings.value.logoUrl,
       
       packages: packages.value,
       addons: addons.value,
       banks: banks.value,
       inventory: inventory.value,
       team: team.value,
-      workflowTemplate: workflowTemplate.value // SIMPAN SOP TEMPLATENYA
+      workflowTemplate: workflowTemplate.value
     }, { merge: true })
 
     Swal.fire({ icon: 'success', title: 'Tersimpan!', showConfirmButton: false, timer: 1500 })
     newLogoFile.value = null
-    logoPreview.value = finalLogo
+    logoPreview.value = finalLogo || settings.value.logoUrl
   } catch (e) { 
     Swal.fire('Gagal', e.message, 'error') 
   } finally { 
     isSaving.value = false 
   }
-
-  
 }
 
 const deleteAccount = async () => {
   const result = await Swal.fire({
     title: 'Hapus Akun Permanen?',
-    text: 'Seluruh data studio akan dihapus. Tindakan ini tidak dapat dibatalkan.',
+    text: 'Seluruh profil, data klien, dan transaksi akan dihapus. Tindakan ini tidak dapat dibatalkan.',
     icon: 'warning',
     showCancelButton: true,
     confirmButtonColor: '#ef4444',
     cancelButtonColor: '#1e293b',
-    confirmButtonText: 'Hapus Sekarang'
+    confirmButtonText: 'Hapus Sekarang',
+    cancelButtonText: 'Batal'
   })
 
   if (result.isConfirmed) {
     try {
       const user = auth.currentUser
       if (!user) return
+      
       await deleteDoc(doc(db, 'vendors', user.uid))
       await deleteUser(user)
+      
       window.location.href = '/'
     } catch (error) {
-      Swal.fire('Gagal', 'Silakan logout dan login kembali untuk alasan keamanan sebelum menghapus akun.', 'error')
+      Swal.fire('Gagal', 'Sistem membutuhkan autentikasi ulang. Silakan logout dan login kembali sebelum menghapus akun.', 'error')
     }
   }
 }
-
 </script>
 
 <template>
   <div class="space-y-6 md:space-y-8 animate-in fade-in duration-500 pb-28">
     <header>
       <h2 class="text-2xl md:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">Vendor Settings</h2>
-      <p class="text-xs md:text-sm font-medium text-slate-500 dark:text-gray-400 mt-1">Konfigurasi data operasional dan inventaris studionya.</p>
+      <p class="text-xs md:text-sm font-medium text-slate-500 dark:text-gray-400 mt-1">Konfigurasi operasional, profil, dan layanan studio Anda.</p>
     </header>
 
     <div v-if="isLoading" class="flex justify-center py-20">
@@ -202,65 +199,66 @@ const deleteAccount = async () => {
             </div>
             <div>
               <p class="text-[10px] font-bold text-cyan-500 uppercase tracking-widest mb-1">Logo Studio</p>
-              <p class="text-[11px] font-medium text-slate-500 dark:text-gray-400">Muncul di kop surat Invoice (.png/.jpg)</p>
+              <p class="text-[11px] font-medium text-slate-500 dark:text-gray-400">Digunakan pada kop surat Invoice (.png/.jpg)</p>
             </div>
           </div>
 
           <div>
             <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-4">Profil Owner</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Nama Owner</label><input v-model="settings.ownerName" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
-              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">WA Pribadi</label><input v-model="settings.whatsappOwner" @input="filterNumber('whatsappOwner')" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
-              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Email Pribadi</label><input v-model="settings.ownerEmail" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
+              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Nama Lengkap</label><input v-model="settings.ownerName" placeholder="Nama asli owner" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
+              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">WA Pribadi</label><input v-model="settings.ownerWhatsapp" @input="filterNumber('ownerWhatsapp')" placeholder="08..." class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
+              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Email Pribadi</label><input v-model="settings.ownerEmail" type="email" placeholder="email@domain.com" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
               <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Instagram Pribadi</label><input v-model="settings.ownerInstagram" placeholder="@username" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
             </div>
           </div>
 
           <div class="pt-6 border-t border-slate-100 dark:border-white/5">
-            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-4">Profil Studio (Publik)</h3>
+            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-4">Profil Studio</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Nama Studio</label><input v-model="settings.vendorName" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-bold text-slate-900 dark:text-white"></div>
-              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">WA Admin</label><input v-model="settings.vendorWhatsapp" @input="filterNumber('vendorWhatsapp')" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
-              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Email Studio</label><input v-model="settings.vendorEmail" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
+              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Nama Studio / Brand</label><input v-model="settings.vendorName" placeholder="Cth: Lensa Pictura" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-bold text-slate-900 dark:text-white"></div>
+              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">WA Admin Studio</label><input v-model="settings.vendorWhatsapp" @input="filterNumber('vendorWhatsapp')" placeholder="08..." class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
+              <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Email Studio</label><input v-model="settings.vendorEmail" type="email" placeholder="admin@studio.com" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
               <div class="space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Instagram Studio</label><input v-model="settings.vendorInstagram" placeholder="@studio" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3.5 px-4 rounded-xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white"></div>
-              <div class="md:col-span-2 space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Alamat Basecamp</label><textarea v-model="settings.address" placeholder="Jl. Contoh No 123..." class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-4 px-4 rounded-2xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white" rows="2"></textarea></div>
+              <div class="md:col-span-2 space-y-1.5"><label class="text-[10px] font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider pl-1">Alamat Basecamp</label><textarea v-model="settings.address" placeholder="Tuliskan alamat lengkap studio..." class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-4 px-4 rounded-2xl outline-none focus:border-cyan-500/50 transition-all text-sm font-medium text-slate-900 dark:text-white" rows="2"></textarea></div>
             </div>
           </div>
         </div>
 
         <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-8 shadow-sm">
           <div>
-            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-4">Daftar Harga Paket</h3>
+            <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-4">Daftar Paket Layanan</h3>
             <div class="space-y-4 mb-4">
               <div v-for="(pkg, idx) in packages" :key="pkg.id" class="flex flex-col sm:flex-row gap-3 items-start sm:items-center group bg-slate-50/50 dark:bg-white/5 p-4 border border-slate-200/60 dark:border-white/10 rounded-2xl relative">
-                <button @click="removeListItem(packages, idx)" class="absolute -top-2 -right-2 p-1.5 bg-rose-100 dark:bg-rose-500/20 text-rose-500 rounded-full shadow-sm sm:static sm:bg-transparent sm:shadow-none sm:text-slate-300 dark:sm:text-gray-600 sm:hover:text-rose-500 transition-colors z-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-                <div class="w-full sm:flex-1 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Nama Paket</label><input v-model="pkg.name" placeholder="Nama Paket (Cth: Gold)" class="w-full bg-white dark:bg-[#1a1a1a] sm:bg-transparent p-3 sm:p-1 rounded-xl sm:rounded-none border border-slate-200/60 dark:border-white/10 sm:border-none outline-none text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400"></div>
-                <div class="w-full sm:w-48 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Harga</label><div class="flex items-center w-full bg-white dark:bg-[#1a1a1a] px-3 py-2.5 rounded-xl border border-slate-200/60 dark:border-white/10 focus-within:border-cyan-400/50"><span class="text-[11px] font-bold text-slate-400 mr-2">Rp</span><input v-model="pkg.price" type="number" placeholder="0" class="w-full bg-transparent outline-none text-sm font-semibold text-slate-900 dark:text-white"></div></div>
+                <button @click="removeListItem(packages, idx)" class="absolute -top-2 -right-2 p-1.5 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 text-rose-500 rounded-lg shadow-sm sm:static sm:bg-transparent sm:border-none sm:shadow-none sm:text-slate-400 sm:hover:text-rose-500 transition-colors z-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                <div class="w-full sm:flex-1 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Nama Paket</label><input v-model="pkg.name" placeholder="Nama Paket (Cth: Graduation Gold)" class="w-full bg-white dark:bg-[#1a1a1a] sm:bg-transparent p-3 sm:p-1 rounded-xl sm:rounded-none border border-slate-200/60 dark:border-white/10 sm:border-none outline-none text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400"></div>
+                <div class="w-full sm:w-48 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Harga</label><div class="flex items-center w-full bg-white dark:bg-[#1a1a1a] px-3 py-2.5 rounded-xl border border-slate-200/60 dark:border-white/10 focus-within:border-cyan-500/50 transition-colors"><span class="text-[11px] font-bold text-slate-400 mr-2">Rp</span><input v-model="pkg.price" type="number" placeholder="0" class="w-full bg-transparent outline-none text-sm font-semibold text-slate-900 dark:text-white"></div></div>
               </div>
             </div>
-            <button @click="addListItem(packages, { name: '', price: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">+ Tambah Paket Baru</button>
+            <button @click="addListItem(packages, { name: '', price: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Paket Baru</button>
           </div>
+          
           <div class="pt-6 border-t border-slate-100 dark:border-white/5">
             <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-4">Layanan Tambahan (Add-ons)</h3>
             <div class="space-y-4 mb-4">
               <div v-for="(addon, idx) in addons" :key="addon.id" class="flex flex-col sm:flex-row gap-3 items-start sm:items-center group bg-slate-50/50 dark:bg-white/5 p-4 border border-slate-200/60 dark:border-white/10 rounded-2xl relative">
-                <button @click="removeListItem(addons, idx)" class="absolute -top-2 -right-2 p-1.5 bg-rose-100 dark:bg-rose-500/20 text-rose-500 rounded-full shadow-sm sm:static sm:bg-transparent sm:shadow-none sm:text-slate-300 dark:sm:text-gray-600 sm:hover:text-rose-500 transition-colors z-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-                <div class="w-full sm:flex-1 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Nama Layanan</label><input v-model="addon.name" placeholder="Layanan (Cth: Cetak 12R)" class="w-full bg-white dark:bg-[#1a1a1a] sm:bg-transparent p-3 sm:p-1 rounded-xl sm:rounded-none border border-slate-200/60 dark:border-white/10 sm:border-none outline-none text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400"></div>
-                <div class="w-full sm:w-48 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Harga Tambahan</label><div class="flex items-center w-full bg-white dark:bg-[#1a1a1a] px-3 py-2.5 rounded-xl border border-slate-200/60 dark:border-white/10 focus-within:border-cyan-400/50"><span class="text-[11px] font-bold text-slate-400 mr-2">Rp</span><input v-model="addon.price" type="number" placeholder="0" class="w-full bg-transparent outline-none text-sm font-semibold text-slate-900 dark:text-white"></div></div>
+                <button @click="removeListItem(addons, idx)" class="absolute -top-2 -right-2 p-1.5 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 text-rose-500 rounded-lg shadow-sm sm:static sm:bg-transparent sm:border-none sm:shadow-none sm:text-slate-400 sm:hover:text-rose-500 transition-colors z-10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+                <div class="w-full sm:flex-1 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Nama Layanan</label><input v-model="addon.name" placeholder="Cth: Tambah Cetak 12R" class="w-full bg-white dark:bg-[#1a1a1a] sm:bg-transparent p-3 sm:p-1 rounded-xl sm:rounded-none border border-slate-200/60 dark:border-white/10 sm:border-none outline-none text-sm font-semibold text-slate-900 dark:text-white placeholder-slate-400"></div>
+                <div class="w-full sm:w-48 space-y-1"><label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider pl-1 sm:hidden">Harga Tambahan</label><div class="flex items-center w-full bg-white dark:bg-[#1a1a1a] px-3 py-2.5 rounded-xl border border-slate-200/60 dark:border-white/10 focus-within:border-cyan-500/50 transition-colors"><span class="text-[11px] font-bold text-slate-400 mr-2">Rp</span><input v-model="addon.price" type="number" placeholder="0" class="w-full bg-transparent outline-none text-sm font-semibold text-slate-900 dark:text-white"></div></div>
               </div>
             </div>
-            <button @click="addListItem(addons, { name: '', price: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">+ Tambah Add-ons</button>
+            <button @click="addListItem(addons, { name: '', price: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Add-ons</button>
           </div>
         </div>
 
         <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-6 shadow-sm">
-          <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Data Kru & Fotografer</h3>
+          <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Data Anggota Tim</h3>
           <div class="space-y-4 mb-4">
             <div v-for="(member, idx) in team" :key="member.id" class="p-5 bg-slate-50/50 dark:bg-white/[0.02] rounded-2xl border border-slate-200/60 dark:border-white/5 space-y-4 relative group">
-              <button @click="removeListItem(team, idx)" class="absolute top-3 right-3 p-1.5 bg-white dark:bg-[#1a1a1a] rounded-md text-slate-400 hover:text-rose-500 transition-all border border-slate-200/60 dark:border-white/10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+              <button @click="removeListItem(team, idx)" class="absolute top-3 right-3 p-1.5 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 rounded-md text-slate-400 hover:text-rose-500 transition-all"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
               <div class="flex flex-col md:flex-row gap-3 pr-8">
-                <input v-model="member.name" placeholder="Nama Panggilan" class="flex-1 bg-white dark:bg-[#1a1a1a] p-3 px-4 rounded-xl text-sm font-semibold outline-none border border-slate-200/60 dark:border-white/10 focus:border-cyan-400/50 text-slate-900 dark:text-white">
-                <input v-model="member.whatsapp" @input="member.whatsapp = member.whatsapp.replace(/\D/g, '')" placeholder="WhatsApp (08...)" class="flex-1 bg-white dark:bg-[#1a1a1a] p-3 px-4 rounded-xl text-sm font-medium outline-none border border-slate-200/60 dark:border-white/10 focus:border-cyan-400/50 text-slate-900 dark:text-white">
+                <input v-model="member.name" placeholder="Nama Tim" class="flex-1 bg-white dark:bg-[#1a1a1a] p-3 px-4 rounded-xl text-sm font-semibold outline-none border border-slate-200/60 dark:border-white/10 focus:border-cyan-400/50 text-slate-900 dark:text-white">
+                <input v-model="member.whatsapp" @input="filterNumber(member, 'whatsapp')" placeholder="No. WhatsApp" class="flex-1 bg-white dark:bg-[#1a1a1a] p-3 px-4 rounded-xl text-sm font-medium outline-none border border-slate-200/60 dark:border-white/10 focus:border-cyan-400/50 text-slate-900 dark:text-white">
                 <select v-model="member.role" class="bg-white dark:bg-[#1a1a1a] p-3 px-4 rounded-xl text-sm font-semibold outline-none border border-slate-200/60 dark:border-white/10 focus:border-cyan-400/50 cursor-pointer text-slate-900 dark:text-white">
                   <option value="FG">Photographer</option>
                   <option value="VG">Videographer</option>
@@ -274,52 +272,51 @@ const deleteAccount = async () => {
                 </div>
                 <div v-if="['Bawa Sendiri', 'Sewa'].includes(member.eqStatus)" class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                   <div><label class="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Kamera (Body)</label><input v-model="member.eqBody" placeholder="Cth: Sony A7III" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3 px-4 rounded-xl mt-1.5 text-xs font-medium outline-none focus:border-cyan-400 text-slate-900 dark:text-white"></div>
-                  <div><label class="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Lighting / Flash</label><input v-model="member.eqFlash" placeholder="Cth: Godox TT685" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3 px-4 rounded-xl mt-1.5 text-xs font-medium outline-none focus:border-cyan-400 text-slate-900 dark:text-white"></div>
-                  <div class="md:col-span-2"><label class="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Lensa Utama & Tambahan</label><input v-model="member.eqLens" placeholder="Cth: 24-70mm f/2.8, 50mm f/1.8 (Pisahkan dengan koma)" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3 px-4 rounded-xl mt-1.5 text-xs font-medium outline-none focus:border-cyan-400 text-slate-900 dark:text-white"></div>
+                  <div><label class="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Lighting / Flash</label><input v-model="member.eqFlash" placeholder="Cth: Godox V860II" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3 px-4 rounded-xl mt-1.5 text-xs font-medium outline-none focus:border-cyan-400 text-slate-900 dark:text-white"></div>
+                  <div class="md:col-span-2"><label class="text-[9px] font-bold uppercase tracking-wider text-slate-400 ml-1">Lensa Detail</label><input v-model="member.eqLens" placeholder="Cth: 24-70mm f/2.8, 50mm f/1.8" class="w-full bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 p-3 px-4 rounded-xl mt-1.5 text-xs font-medium outline-none focus:border-cyan-400 text-slate-900 dark:text-white"></div>
                 </div>
               </div>
             </div>
           </div>
-          <button @click="addListItem(team, { name: '', whatsapp: '', role: 'FG', eqStatus: 'Bawa Sendiri', eqBody: '', eqLens: '', eqFlash: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">+ Tambah Anggota Kru</button>
+          <button @click="addListItem(team, { name: '', whatsapp: '', role: 'FG', eqStatus: 'Bawa Sendiri', eqBody: '', eqLens: '', eqFlash: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Anggota Kru</button>
         </div>
       </div>
 
       <div class="space-y-6 md:space-y-8">
         
         <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-6 shadow-sm">
-  <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Rekening Pembayaran</h3>
-  <div class="space-y-4 mb-4">
-    <div v-for="(bank, idx) in banks" :key="bank.id" class="p-5 bg-slate-50/50 dark:bg-white/5 rounded-2xl relative border border-slate-200/60 dark:border-white/10 group space-y-3">
-      <button @click="removeListItem(banks, idx)" class="absolute top-3 right-3 p-1.5 bg-white dark:bg-[#1a1a1a] rounded-md text-slate-400 hover:text-rose-500 transition-all border border-slate-200/60 dark:border-white/10"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
-      
-      <div>
-        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nama Bank / E-Wallet</label>
-        <input v-model="bank.bankName" placeholder="Cth: BCA / DANA / JAGO" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase outline-none focus:border-cyan-500/50 mt-1">
-      </div>
-      <div>
-        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nomor Rekening</label>
-        <input v-model="bank.number" placeholder="Masukkan nomor rekening" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl font-mono font-bold text-sm outline-none text-slate-900 dark:text-white focus:border-cyan-500/50 mt-1">
-      </div>
-      <div>
-        <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Atas Nama (Pemilik)</label>
-        <input v-model="bank.owner" placeholder="Sesuai buku tabungan" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl text-xs font-semibold text-slate-700 dark:text-gray-300 uppercase outline-none focus:border-cyan-500/50 mt-1">
-      </div>
-    </div>
-  </div>
-  <button @click="addListItem(banks, { bankName: '', number: '', owner: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-cyan-200 dark:border-cyan-500/30 text-cyan-600 dark:text-cyan-400 text-xs font-bold hover:bg-cyan-50 dark:hover:bg-cyan-500/10 transition-colors">+ Tambah Rekening</button>
-</div>
-
-        <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-4 shadow-sm">
-          <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Workflow Template (SOP)</h3>
-          <p class="text-[10px] text-slate-500 dark:text-gray-400 mb-4">Template ini akan otomatis muncul sebagai checklist di setiap project klien baru.</p>
-          <div class="space-y-3 mb-4">
-            <div v-for="(task, idx) in workflowTemplate" :key="task.id" class="flex gap-2 items-center group bg-slate-50/50 dark:bg-white/5 p-2 border border-slate-200/60 dark:border-white/10 rounded-xl">
-              <span class="text-[10px] font-bold text-slate-400 ml-2">{{ idx + 1 }}</span>
-              <input v-model="task.title" placeholder="Nama step (Cth: Upload RAW)" class="flex-1 bg-transparent px-2 outline-none text-xs font-medium text-slate-900 dark:text-white placeholder-slate-400">
-              <button @click="removeListItem(workflowTemplate, idx)" class="p-1.5 text-slate-300 dark:text-gray-600 hover:text-rose-500 transition-colors"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+          <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Rekening Pembayaran</h3>
+          <div class="space-y-4 mb-4">
+            <div v-for="(bank, idx) in banks" :key="bank.id" class="p-5 bg-slate-50/50 dark:bg-white/5 rounded-2xl relative border border-slate-200/60 dark:border-white/10 group space-y-3">
+              <button @click="removeListItem(banks, idx)" class="absolute top-3 right-3 p-1.5 bg-white dark:bg-[#1a1a1a] border border-slate-200 dark:border-white/10 rounded-md text-slate-400 hover:text-rose-500 transition-all"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+              <div>
+                <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Bank / E-Wallet</label>
+                <input v-model="bank.bankName" placeholder="Cth: BCA / DANA" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl text-xs font-bold text-cyan-600 dark:text-cyan-400 uppercase outline-none focus:border-cyan-500/50 mt-1">
+              </div>
+              <div>
+                <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Nomor Rekening</label>
+                <input v-model="bank.number" placeholder="Masukkan nomor" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl font-mono font-bold text-sm outline-none text-slate-900 dark:text-white focus:border-cyan-500/50 mt-1">
+              </div>
+              <div>
+                <label class="text-[9px] font-bold text-slate-400 uppercase tracking-wider ml-1">Atas Nama</label>
+                <input v-model="bank.owner" placeholder="Nama pemilik" class="w-full bg-white dark:bg-[#1a1a1a] border border-slate-200/60 dark:border-white/10 p-3 rounded-xl text-xs font-semibold text-slate-700 dark:text-gray-300 uppercase outline-none focus:border-cyan-500/50 mt-1">
+              </div>
             </div>
           </div>
-          <button @click="addListItem(workflowTemplate, { title: '' })" class="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/20 text-slate-500 dark:text-gray-400 text-[11px] font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Step SOP</button>
+          <button @click="addListItem(banks, { bankName: '', number: '', owner: '' })" class="w-full py-3.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-300 text-xs font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Rekening</button>
+        </div>
+
+        <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-4 shadow-sm">
+          <h3 class="text-xs font-bold uppercase tracking-widest text-slate-800 dark:text-white mb-2">Workflow (SOP)</h3>
+          <p class="text-[10px] text-slate-500 dark:text-gray-400 mb-4">Template checklist otomatis untuk project baru.</p>
+          <div class="space-y-3 mb-4">
+            <div v-for="(task, idx) in workflowTemplate" :key="task.id" class="flex gap-2 items-center bg-slate-50/50 dark:bg-white/5 p-2 border border-slate-200/60 dark:border-white/10 rounded-xl">
+              <span class="text-[10px] font-bold text-slate-400 ml-2">{{ idx + 1 }}</span>
+              <input v-model="task.title" placeholder="Nama step" class="flex-1 bg-transparent px-2 outline-none text-xs font-medium text-slate-900 dark:text-white">
+              <button @click="removeListItem(workflowTemplate, idx)" class="p-1.5 text-slate-300 hover:text-rose-500 transition-colors"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+            </div>
+          </div>
+          <button @click="addListItem(workflowTemplate, { title: '' })" class="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/20 text-slate-500 dark:text-gray-400 text-[11px] font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Step</button>
         </div>
 
         <div class="bg-white dark:bg-[#111] border border-slate-200/60 dark:border-white/10 p-6 md:p-8 rounded-[2rem] space-y-6 shadow-sm lg:sticky lg:top-24">
@@ -331,20 +328,20 @@ const deleteAccount = async () => {
                 <option value="Body">Body Kamera</option>
                 <option value="Lens">Lensa</option>
                 <option value="Flash">Flash / Lampu</option>
-                <option value="Lainnya">Lainnya / Aksesoris</option>
+                <option value="Lainnya">Lainnya</option>
               </select>
-              <button @click="removeListItem(inventory, idx)" class="text-slate-300 dark:text-gray-600 hover:text-rose-500 p-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
+              <button @click="removeListItem(inventory, idx)" class="text-slate-300 hover:text-rose-500 p-1.5"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>
             </div>
           </div>
-          <button @click="addListItem(inventory, { name: '', type: 'Body' })" class="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/20 text-slate-500 dark:text-gray-400 text-[11px] font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Aset Studio</button>
+          <button @click="addListItem(inventory, { name: '', type: 'Body' })" class="w-full py-2.5 rounded-xl border-2 border-dashed border-slate-200 dark:border-white/20 text-slate-500 dark:text-gray-400 text-[11px] font-bold hover:bg-slate-50 dark:hover:bg-white/5 transition-colors">+ Tambah Aset</button>
         </div>
 
       </div>
     </div>
 
-    <div class="mt-12 pt-8 border-t border-rose-100 dark:border-rose-900/30 px-6 md:px-8">
+    <div class="mt-12 pt-8 border-t border-rose-100 dark:border-rose-900/30 px-2">
       <h3 class="text-xs font-bold uppercase tracking-widest text-rose-500 mb-2">Danger Zone</h3>
-      <p class="text-[11px] text-slate-500 dark:text-gray-400 mb-4">Tindakan ini akan menghapus seluruh profil dan data klien secara permanen.</p>
+      <p class="text-[11px] text-slate-500 dark:text-gray-400 mb-4">Tindakan ini akan menghapus seluruh data studio secara permanen.</p>
       <button @click.prevent="deleteAccount" class="px-5 py-2.5 bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-500/20 text-[10px] font-bold uppercase tracking-widest rounded-xl hover:bg-rose-100 transition-all">
         Hapus Akun Studio
       </button>

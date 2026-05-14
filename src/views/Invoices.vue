@@ -5,15 +5,15 @@ import { auth, db } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore'
 import { useTheme } from '../theme'
+import html2pdf from 'html2pdf.js'
 
 const { isDark } = useTheme()
 const isLoading = ref(true)
 const projects = ref([])
 const currentUser = ref(null)
 
-// Variabel setting dari database
 const ownerName = ref('Wildan') 
-const managementFeePercent = ref(0.20) // 20% Potongan default
+const managementFeePercent = ref(0.20) 
 const vendorInfo = ref({})
 
 const fetchVendorSettings = async (uid) => {
@@ -21,14 +21,14 @@ const fetchVendorSettings = async (uid) => {
     const docSnap = await getDoc(doc(db, 'vendors', uid))
     if (docSnap.exists()) {
       const data = docSnap.data()
-      // Ambil nama owner asli dari database biar logic pembagian fee nya akurat
       ownerName.value = data.ownerName || data.ownerInfo?.fullName || 'Wildan'
       vendorInfo.value = {
         name: data.vendorName || data.vendorInfo?.name || 'VIXEL CREATIVE',
         whatsapp: data.vendorWhatsapp || data.vendorInfo?.whatsapp || '',
         instagram: data.igVendor || data.vendorInfo?.instagram || '',
         address: data.address || data.vendorInfo?.address || '',
-        banks: data.banks || data.operational?.banks || []
+        banks: data.banks || data.operational?.banks || [],
+        logoUrl: data.logoUrl || data.vendorInfo?.logoUrl || '' // LOGO SEKARANG DITARIK
       }
     }
   } catch (error) {
@@ -40,7 +40,7 @@ const fetchProjects = async (uid) => {
   if (!uid) return
   isLoading.value = true
   
-  await fetchVendorSettings(uid) // Tarik profil vendor dulu
+  await fetchVendorSettings(uid) 
   
   try {
     const q = collection(db, 'vendors', uid, 'projects')
@@ -53,14 +53,12 @@ const fetchProjects = async (uid) => {
     projects.value = rawData
         .filter(p => validStatuses.includes(p.status) || p.status === 'Menunggu DP')
         .map(p => {
-          // Ambil harga (kalau object, ambil .price, kalau string ekstrak angkanya)
           const rawPrice = extractPrice(p.package?.price || p.package || '0')
           const fg = p.photographer || 'Belum di-assign'
           
           let myProfit = 0
           let teamFee = 0
           
-          // Logic Bagi Hasil
           if (fg === ownerName.value || fg === 'Belum di-assign') {
             myProfit = rawPrice 
           } else {
@@ -130,22 +128,21 @@ onMounted(() => {
 })
 
 // ===================================================================
-// FUNGSI PRINT INVOICE KLIEN (DENGAN DATA DINAMIS)
+// EXPORT PDF INVOICE KLIEN (DIRECT DOWNLOAD A4)
 // ===================================================================
 const printInvoiceClient = (p) => {
   const d = new Date(p.rawDateForPrint)
   const dateStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
   
-  // Render html dinamis untuk list bank
   let banksHtml = ''
   if (vendorInfo.value.banks && vendorInfo.value.banks.length > 0) {
     vendorInfo.value.banks.forEach(b => {
       banksHtml += `
-        <div class="bank-details">
-          <div class="bank-logo">${b.bankName}</div>
-          <div class="bank-text">
+        <div style="display: flex; align-items: center; margin-bottom: 10px;">
+          <div style="width: 40px; height: 24px; background: #f8fafc; border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 9px; font-weight: 800; border: 1px solid #e2e8f0; color: #0f172a;">${b.bankName}</div>
+          <div style="font-size: 11px; line-height: 1.4; color: #0f172a; font-weight: 700; text-transform: uppercase;">
             ${b.owner}
-            <span>${b.number}</span>
+            <span style="display: block; font-weight: 600; color: #64748b; font-size: 10px; font-family: monospace; letter-spacing: 1px; margin-top: 2px;">${b.number}</span>
           </div>
         </div>
       `
@@ -153,195 +150,172 @@ const printInvoiceClient = (p) => {
   } else {
     banksHtml = '<p style="font-size:11px; color:#64748b;">Belum ada rekening yang diatur.</p>'
   }
+
+  // Cek apakah ada logo, jika ya pakai logo img tag dengan CORS, jika tidak pakai teks h1
+  const logoHeader = vendorInfo.value.logoUrl 
+    ? `<img src="${vendorInfo.value.logoUrl}" crossorigin="anonymous" style="max-height: 45px; object-fit: contain; margin-bottom: 5px;" />`
+    : `<h1 style="margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;">${vendorInfo.value.name}</h1>`;
   
-  const printWindow = window.open('', '_blank')
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Invoice - ${p.clientName} (${p.id})</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 0; color: #1e293b; max-width: 800px; margin: auto; background: #fff; }
-          .invoice-container { padding: 40px; }
-          .header-top { background: #0f172a; color: white; padding: 30px 40px; display: flex; justify-content: space-between; align-items: center; }
-          .header-top h1 { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; }
-          .header-top p { margin: 5px 0 0; font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; }
-          .header-accent { background: #06b6d4; height: 6px; width: 100%; } /* Cyan Vixel */
-          .info-section { display: flex; justify-content: space-between; padding: 40px 40px 20px; }
-          .info-box { font-size: 12px; line-height: 1.8; color: #475569; }
-          .info-box span.label { display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px; }
-          .info-box strong { color: #0f172a; font-size: 14px; text-transform: uppercase; }
-          table { width: calc(100% - 80px); margin: 0 40px 30px; border-collapse: collapse; }
-          th { background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: left; letter-spacing: 1px; }
-          th.center, td.center { text-align: center; }
-          th.right, td.right { text-align: right; }
-          td { padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; }
-          .subtotal-row td { border-bottom: none; padding-top: 30px; font-weight: 600; }
-          .total-row td { font-weight: 800; font-size: 16px; color: #0f172a; border-bottom: none; }
-          .footer-section { padding: 10px 40px 40px; display: flex; justify-content: space-between; align-items: flex-end; }
-          .payment-info h4 { margin: 0 0 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #0f172a; font-weight: 800; }
-          .bank-details { display: flex; align-items: center; margin-bottom: 10px; }
-          .bank-logo { width: 40px; height: 24px; background: #f8fafc; border-radius: 4px; display: flex; align-items: center; justify-content: center; margin-right: 12px; font-size: 9px; font-weight: 800; border: 1px solid #e2e8f0; color: #0f172a;}
-          .bank-text { font-size: 11px; line-height: 1.4; color: #0f172a; font-weight: 700; text-transform: uppercase; }
-          .bank-text span { display: block; font-weight: 600; color: #64748b; font-size: 10px; font-family: monospace; letter-spacing: 1px; margin-top: 2px;}
-          .signature { text-align: right; font-size: 12px; color: #0f172a; font-style: italic; font-weight: 600; letter-spacing: 1px; }
-          .signature-line { width: 60px; height: 1px; background: #0f172a; margin-left: auto; margin-top: 15px; }
-        </style>
-      </head>
-      <body>
-        <div class="header-top">
-          <div>
-            <h1>${vendorInfo.value.name}</h1>
-            <p>${vendorInfo.value.address || 'Photography & Videography Services'}</p>
-          </div>
-          <div style="text-align: right;">
-            <h2 style="margin:0; font-size: 24px; letter-spacing: 3px; font-weight: 900;">INVOICE</h2>
-            <p style="color: #94a3b8; font-family: monospace; font-size: 12px; margin-top: 5px;">#${p.id.substring(0,8).toUpperCase()}</p>
-          </div>
+  const htmlContent = `
+    <div style="width: 800px; padding: 40px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #1e293b; box-sizing: border-box;">
+      <div style="background: #0f172a; color: white; padding: 30px 40px; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          ${logoHeader}
+          <p style="margin: 5px 0 0; font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">${vendorInfo.value.address || 'Photography & Videography Services'}</p>
         </div>
-        <div class="header-accent"></div>
-
-        <div class="info-section">
-          <div class="info-box">
-            <span class="label">To:</span>
-            <strong>${p.clientName}</strong><br>
-            Phone: ${p.whatsapp}<br>
-            Status: <span style="color: #06b6d4; font-weight: 800;">${p.status.toUpperCase()}</span>
-          </div>
-          <div class="info-box" style="text-align: right;">
-            <span class="label">Location / Univ:</span>
-            <strong>${p.university}</strong><br><br>
-            <span class="label">Shoot Date:</span>
-            <strong style="color: #0f172a;">${dateStr}</strong>
-          </div>
+        <div style="text-align: right;">
+          <h2 style="margin:0; font-size: 24px; letter-spacing: 3px; font-weight: 900;">INVOICE</h2>
+          <p style="color: #94a3b8; font-family: monospace; font-size: 12px; margin-top: 5px;">#${p.id.substring(0,8).toUpperCase()}</p>
         </div>
+      </div>
+      <div style="background: #06b6d4; height: 6px; width: 100%;"></div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Product Description</th>
-              <th class="center">Qty</th>
-              <th class="right">Price</th>
-              <th class="right">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>
-                <strong style="font-size: 13px; color: #0f172a; text-transform: uppercase;">Documentation Service</strong><br>
-                <span style="font-size: 11px; color: #64748b; margin-top: 4px; display: inline-block;">Package: ${p.package}</span>
-              </td>
-              <td class="center">1</td>
-              <td class="right">${formatRupiah(p.totalPrice)}</td>
-              <td class="right">${formatRupiah(p.totalPrice)}</td>
-            </tr>
-            <tr class="subtotal-row">
-              <td colspan="3" class="right">Subtotal</td>
-              <td class="right">${formatRupiah(p.totalPrice)}</td>
-            </tr>
-            <tr class="total-row">
-              <td colspan="3" class="right">TOTAL</td>
-              <td class="right" style="color: #06b6d4;">${formatRupiah(p.totalPrice)}</td>
-            </tr>
-          </tbody>
-        </table>
-
-        <div class="footer-section">
-          <div class="payment-info">
-            <h4>Payment Methods</h4>
-            ${banksHtml}
-          </div>
-          <div class="signature">
-            <p>create the moment<br>with us</p>
-            <div class="signature-line"></div>
-          </div>
+      <div style="display: flex; justify-content: space-between; padding: 40px 40px 20px;">
+        <div style="font-size: 12px; line-height: 1.8; color: #475569;">
+          <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px;">To:</span>
+          <strong style="color: #0f172a; font-size: 14px; text-transform: uppercase;">${p.clientName}</strong><br>
+          Phone: ${p.whatsapp}<br>
+          Status: <span style="color: #06b6d4; font-weight: 800;">${p.status.toUpperCase()}</span>
         </div>
-        <script>window.onload = function() { window.print(); }<\/script>
-      </body>
-    </html>
-  `)
-  printWindow.document.close()
+        <div style="font-size: 12px; line-height: 1.8; color: #475569; text-align: right;">
+          <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px;">Location / Univ:</span>
+          <strong style="color: #0f172a; font-size: 14px; text-transform: uppercase;">${p.university}</strong><br><br>
+          <span style="display: block; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 4px;">Shoot Date:</span>
+          <strong style="color: #0f172a;">${dateStr}</strong>
+        </div>
+      </div>
+
+      <table style="width: calc(100% - 80px); margin: 0 40px 30px; border-collapse: collapse;">
+        <thead>
+          <tr>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: left; letter-spacing: 1px;">Product Description</th>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: center; letter-spacing: 1px;">Qty</th>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: right; letter-spacing: 1px;">Price</th>
+            <th style="background: #0f172a; color: white; text-transform: uppercase; font-size: 10px; padding: 12px 15px; text-align: right; letter-spacing: 1px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155;">
+              <strong style="font-size: 13px; color: #0f172a; text-transform: uppercase;">Documentation Service</strong><br>
+              <span style="font-size: 11px; color: #64748b; margin-top: 4px; display: inline-block;">Package: ${p.package}</span>
+            </td>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; text-align: center;">1</td>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+            <td style="padding: 15px; border-bottom: 1px dashed #e2e8f0; font-size: 12px; color: #334155; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding: 15px; padding-top: 30px; font-size: 12px; font-weight: 600; text-align: right;">Subtotal</td>
+            <td style="padding: 15px; padding-top: 30px; font-size: 12px; font-weight: 600; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+          </tr>
+          <tr>
+            <td colspan="3" style="padding: 15px; font-weight: 800; font-size: 16px; color: #0f172a; text-align: right;">TOTAL</td>
+            <td style="padding: 15px; font-weight: 800; font-size: 16px; color: #06b6d4; text-align: right;">${formatRupiah(p.totalPrice)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="padding: 10px 40px 40px; display: flex; justify-content: space-between; align-items: flex-end;">
+        <div>
+          <h4 style="margin: 0 0 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #0f172a; font-weight: 800;">Payment Methods</h4>
+          ${banksHtml}
+        </div>
+        <div style="text-align: right; font-size: 12px; color: #0f172a; font-style: italic; font-weight: 600; letter-spacing: 1px;">
+          <p>create the moment<br>with us</p>
+          <div style="width: 60px; height: 1px; background: #0f172a; margin-left: auto; margin-top: 15px;"></div>
+        </div>
+      </div>
+    </div>
+  `
+
+  const opt = {
+    margin:       0,
+    filename:     `Invoice_${p.clientName}_${p.id.substring(0,8)}.pdf`,
+    image:        { type: 'jpeg', quality: 1 },
+    html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+    jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+  }
+
+  Swal.fire({ title: 'Menyimpan PDF...', text: 'Tunggu sebentar ya', allowOutsideClick: false, didOpen: () => Swal.showLoading() })
+  
+  // Element temp untuk dirender html2pdf
+  const element = document.createElement('div')
+  element.innerHTML = htmlContent
+  
+  html2pdf().set(opt).from(element).save().then(() => Swal.close())
 }
 
 // ===================================================================
-// FUNGSI PRINT SLIP FEE FOTOGRAFER
+// EXPORT PDF SLIP FEE FOTOGRAFER
 // ===================================================================
 const printInvoiceFG = (p) => {
   const d = new Date(p.rawDateForPrint)
   const dateStr = d.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
   
-  const printWindow = window.open('', '_blank')
-  printWindow.document.write(`
-    <html>
-      <head>
-        <title>Fee Slip - ${p.photographer}</title>
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: auto; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px dashed #cbd5e1; padding-bottom: 24px; margin-bottom: 32px; }
-          .brand h1 { margin: 0; color: #f97316; font-size: 28px; font-weight: 900; letter-spacing: -1px; }
-          .brand p { margin: 4px 0 0; color: #64748b; font-size: 14px; font-weight: 600;}
-          .invoice-title { text-align: right; }
-          .invoice-title h2 { margin: 0; font-size: 18px; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;}
-          .invoice-title p { margin: 4px 0 0; color: #64748b; font-size: 12px; }
-          .client-box { background: #fff7ed; padding: 20px; border-radius: 12px; margin-bottom: 32px; border: 1px solid #ffedd5; }
-          .client-box p { margin: 4px 0; font-size: 14px; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 32px; }
-          th, td { border-bottom: 1px solid #e2e8f0; padding: 16px 12px; text-align: left; font-size: 14px; }
-          th { background-color: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px;}
-          .total-row td { font-weight: 900; font-size: 16px; color: #0f172a; border-bottom: none; border-top: 2px solid #cbd5e1;}
-          .footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 60px; padding-top: 20px; border-top: 1px dashed #e2e8f0; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div class="brand">
-            <h1>PAYMENT SLIP.</h1>
-            <p>${vendorInfo.value.name.toUpperCase()} MGMT</p>
-          </div>
-          <div class="invoice-title">
-            <h2>FEE EKSEKUTOR</h2>
-            <p>ID: ${p.id.substring(0,8).toUpperCase()}</p>
-            <p>Terbit: ${new Date().toLocaleDateString('id-ID')}</p>
-          </div>
+  const htmlContent = `
+    <div style="width: 800px; padding: 40px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #1e293b; box-sizing: border-box;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px dashed #cbd5e1; padding-bottom: 24px; margin-bottom: 32px;">
+        <div>
+          <h1 style="margin: 0; color: #f97316; font-size: 28px; font-weight: 900; letter-spacing: -1px;">PAYMENT SLIP.</h1>
+          <p style="margin: 4px 0 0; color: #64748b; font-size: 14px; font-weight: 600;">${vendorInfo.value.name.toUpperCase()} MGMT</p>
         </div>
-        
-        <div class="client-box">
-          <p style="color: #f97316; font-size: 11px; text-transform: uppercase; font-weight: 800; margin-bottom: 8px;">Dibayarkan Kepada:</p>
-          <p style="font-size: 20px; font-weight: 800; color: #0f172a;">${p.photographer}</p>
-          <p style="font-weight: 500; color: #475569;">Tugas: <strong style="color: #ea580c;">Eksekusi Lapangan (FG/VG)</strong></p>
+        <div style="text-align: right;">
+          <h2 style="margin: 0; font-size: 18px; color: #0f172a; text-transform: uppercase; letter-spacing: 1px;">FEE EKSEKUTOR</h2>
+          <p style="margin: 4px 0 0; color: #64748b; font-size: 12px;">ID: ${p.id.substring(0,8).toUpperCase()}</p>
+          <p style="margin: 4px 0 0; color: #64748b; font-size: 12px;">Terbit: ${new Date().toLocaleDateString('id-ID')}</p>
         </div>
+      </div>
+      
+      <div style="background: #fff7ed; padding: 20px; border-radius: 12px; margin-bottom: 32px; border: 1px solid #ffedd5;">
+        <p style="color: #f97316; font-size: 11px; text-transform: uppercase; font-weight: 800; margin-bottom: 8px;">Dibayarkan Kepada:</p>
+        <p style="font-size: 20px; font-weight: 800; color: #0f172a; margin: 4px 0;">${p.photographer}</p>
+        <p style="font-weight: 500; color: #475569; margin: 4px 0;">Tugas: <strong style="color: #ea580c;">Eksekusi Lapangan (FG/VG)</strong></p>
+      </div>
 
-        <table>
-          <thead>
-            <tr>
-              <th>Rincian Pekerjaan</th>
-              <th style="text-align: right;">Nominal Fee</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>
-                Klien: <strong style="color: #0f172a;">${p.clientName} (${p.university})</strong><br>
-                <span style="font-size: 12px; color: #64748b; margin-top: 4px; display: inline-block;">Tanggal Sesi: ${dateStr}</span><br>
-                <span style="font-size: 12px; color: #64748b;">Paket: ${p.package}</span>
-              </td>
-              <td style="text-align: right; vertical-align: top; font-weight: 600;">${formatRupiah(p.fgFee)}</td>
-            </tr>
-            <tr class="total-row">
-              <td style="text-align: right; padding-right: 24px;">TOTAL FEE DITERIMA</td>
-              <td style="text-align: right; color: #ea580c;">${formatRupiah(p.fgFee)}</td>
-            </tr>
-          </tbody>
-        </table>
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 32px;">
+        <thead>
+          <tr>
+            <th style="background-color: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; padding: 16px 12px; text-align: left;">Rincian Pekerjaan</th>
+            <th style="background-color: #f8fafc; color: #64748b; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 1px; border-bottom: 1px solid #e2e8f0; padding: 16px 12px; text-align: right;">Nominal Fee</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="border-bottom: 1px solid #e2e8f0; padding: 16px 12px; font-size: 14px;">
+              Klien: <strong style="color: #0f172a;">${p.clientName} (${p.university})</strong><br>
+              <span style="font-size: 12px; color: #64748b; margin-top: 4px; display: inline-block;">Tanggal Sesi: ${dateStr}</span><br>
+              <span style="font-size: 12px; color: #64748b;">Paket: ${p.package}</span>
+            </td>
+            <td style="border-bottom: 1px solid #e2e8f0; padding: 16px 12px; font-size: 14px; text-align: right; vertical-align: top; font-weight: 600;">${formatRupiah(p.fgFee)}</td>
+          </tr>
+          <tr>
+            <td style="padding: 16px 12px; font-weight: 900; font-size: 16px; color: #0f172a; border-top: 2px solid #cbd5e1; text-align: right; padding-right: 24px;">TOTAL FEE DITERIMA</td>
+            <td style="padding: 16px 12px; font-weight: 900; font-size: 16px; color: #ea580c; border-top: 2px solid #cbd5e1; text-align: right;">${formatRupiah(p.fgFee)}</td>
+          </tr>
+        </tbody>
+      </table>
 
-        <div class="footer">
-          <p>Terima kasih atas kerja keras tim. Jaga selalu kualitas visual ${vendorInfo.value.name}!</p>
-          <p>Dokumen ini adalah bukti pencairan fee internal yang sah.</p>
-        </div>
-        <script>window.onload = function() { window.print(); }<\/script>
-      </body>
-    </html>
-  `)
-  printWindow.document.close()
+      <div style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 60px; padding-top: 20px; border-top: 1px dashed #e2e8f0;">
+        <p>Terima kasih atas kerja keras tim. Jaga selalu kualitas visual ${vendorInfo.value.name}!</p>
+        <p>Dokumen ini adalah bukti pencairan fee internal yang sah.</p>
+      </div>
+    </div>
+  `
+
+  const opt = {
+    margin:       0,
+    filename:     `Fee_${p.photographer}_${p.id.substring(0,8)}.pdf`,
+    image:        { type: 'jpeg', quality: 1 },
+    html2canvas:  { scale: 2, useCORS: true, letterRendering: true },
+    jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+  }
+
+  Swal.fire({ title: 'Menyimpan PDF...', text: 'Tunggu sebentar ya', allowOutsideClick: false, didOpen: () => Swal.showLoading() })
+  
+  const element = document.createElement('div')
+  element.innerHTML = htmlContent
+  
+  html2pdf().set(opt).from(element).save().then(() => Swal.close())
 }
 </script>
 
