@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { auth, db } from '../firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, query, getDocs, addDoc, Doc, getDoc } from 'firebase/firestore'
+import { collection, query, getDocs, addDoc, doc, getDoc } from 'firebase/firestore'
 import Swal from 'sweetalert2'
 import { useTheme } from '../theme'
 
