@@ -1,8 +1,12 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { 
+  initializeAuth, 
+  indexedDBLocalPersistence, 
+  browserLocalPersistence 
+} from "firebase/auth";
+import { Capacitor } from "@capacitor/core";
 
-// Setup Config Production-Ready (Tarik dari .env)
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -12,8 +16,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-// Inisialisasi
 const app = initializeApp(firebaseConfig);
 
-export const auth = getAuth(app);
+// Biar login gak hilang-hilang dan gak white screen di Android
+export const auth = initializeAuth(app, {
+  persistence: Capacitor.isNativePlatform() 
+    ? indexedDBLocalPersistence 
+    : browserLocalPersistence
+});
+
 export const db = getFirestore(app);

@@ -1,5 +1,6 @@
 {
   "appId": "com.vixel.shotflow",
   "appName": "Shotflow",
-  "webDir": "dist"
+  "webDir": "dist",
+  "bundledWebRuntime": false
 }
